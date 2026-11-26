@@ -84,3 +84,11 @@ button:disabled { opacity: .55; }
 @media (prefers-reduced-motion: reduce) { #fade { transition: none; } }
 #awakening { color: #fff0ad; }
 #awake-gauge { width: 100%; height: 7px; display: block; accent-color: #eac176; }
+#quiz-flash { position: absolute; inset: 0; z-index: 5; pointer-events: none; background: #db3434; opacity: 0; }
+#panel[data-quiz] #panel-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#panel[data-quiz] #panel-buttons button { white-space: normal; overflow-wrap: anywhere; }
+#panel[data-quiz] #panel-buttons button:last-child { grid-column: 1 / -1; justify-self: center; }
+.quiz-damage { color: #ffacaa; font-weight: bold; font-variant-numeric: tabular-nums; }
+@media (orientation: landscape) and (max-height: 420px) {
+  #panel[data-quiz] { max-height: 86%; }
+}

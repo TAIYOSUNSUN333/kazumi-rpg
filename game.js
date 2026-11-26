@@ -40,6 +40,9 @@ let jumps = 0;
 let magicAt = 0;
 let glow = null;
 let ring = false;
+let quizOpen = false;
+let shrineDefeated = false;
+let sealEffect = null;
 let invulnerableUntil = 0;
 let fieldSafeUntil = 0;
 let flashUntil = 0;
@@ -66,11 +69,12 @@ audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true)
 function save(explicit = false) {
   if (trialVitals) return false;
   const success = storage.write(saveKey, {
-    version: 6, x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 7, x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
     enemies: enemies.map(enemy => enemy.hp), shrines: shrines.map(shrine => shrine.solved),
+    riddleProgress: shrines.map(shrine => [shrine.questionId ?? null, shrine.wrong ?? 0]), shrineDefeated,
     special: Math.max(0, specialAt - clock), joined, returning, done,
     trials: [...clearedTrials], trialGear, ring, pots: pots.map(pot => pot.broken)
   });
@@ -80,9 +84,9 @@ function save(explicit = false) {
 
 function load(data) {
   if (!data || typeof data !== 'object') return;
-  const current = [4, 5, 6].includes(data.version);
-  ring = [5, 6].includes(data.version) && data.ring === true;
-  pots.forEach((pot, i) => { pot.broken = [5, 6].includes(data.version) && data.pots?.[i] === true; });
+  const current = [4, 5, 6, 7].includes(data.version);
+  ring = [5, 6, 7].includes(data.version) && data.ring === true;
+  pots.forEach((pot, i) => { pot.broken = [5, 6, 7].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
   player.xp = numeric(data.xp, 0, 0, 1000000);
@@ -101,7 +105,16 @@ function load(data) {
     npc.visited = player.party.includes(npc.name) || Boolean(modern ? data.visited?.[i] : data.usedNpcs?.[i]);
   }
   gems.forEach((gem, i) => { gem.on = data.gems?.[i] !== false; });
-  shrines.forEach((shrine, i) => { shrine.solved = data.shrines?.[i] === true; });
+  shrineDefeated = data.shrineDefeated === true;
+  shrines.forEach((shrine, i) => {
+    shrine.solved = data.shrines?.[i] === true;
+    const progress = data.riddleProgress?.[i];
+    const question = riddlesById.get(progress?.[0]);
+    if (question && question.id.startsWith(shrineTier(i) + '-')) {
+      shrine.questionId = question.id;
+      shrine.wrong = numeric(progress[1], 0, 0, 999);
+    }
+  });
   enemies.forEach((enemy, i) => {
     const hp = data.enemies?.[i];
     // Old saves used different HP scales. Preserve kills and the fraction remaining.
@@ -283,7 +296,14 @@ function showTitle() {
   }]];
   if (data) actions.unshift(['冒険を再開', () => {
     load(data);
-    if (done) arriveHome(); else enterField();
+    if (done) arriveHome();
+    else {
+      enterField();
+      if (shrineDefeated) {
+        player.hp = 0;
+        defeat('一美は倒れた', '石碑の反動で一美は力尽きた。');
+      }
+    }
   }]);
   panel('一美のスター街道', [
     '愛猫ソソをさらわれた一美は、十二の土地を越えてソソを探しに行く。',
@@ -316,6 +336,7 @@ $('mute').textContent = audio.muted ? '音を出す' : '消音';
 $('mute').setAttribute('aria-pressed', String(audio.muted));
 
 function openMenu() {
+  if (quizOpen || shrineDefeated) return;
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
   const actions = [['戻る', resume]];
@@ -433,28 +454,72 @@ function guide() {
 }
 
 function openShrine(shrine, chapter) {
+  if (shrine.solved) return;
   destination = null;
-  const [, , clue, ...solution] = chapterInfo[chapter];
-  const symbols = [...new Set([...solution, '鈴', '星', '水'])].sort();
-  let sequence = [];
-  function show(error = '') {
-    panel('石碑の封印', [clue, error || '刻んだ印 ' + (sequence.join(' → ') || 'なし')], [
-      ...symbols.map(symbol => [symbol, () => {
-        sequence.push(symbol);
-        if (sequence.length < solution.length) return show();
-        if (!sequence.every((entry, i) => entry === solution[i])) {
-          sequence = [];
-          return show('石碑は反応しない。印を選び直そう。');
+  quizOpen = true;
+  const question = shrineQuestion(shrine, chapter);
+  save();
+  function close() {
+    quizOpen = false;
+    delete $('panel').dataset.quiz;
+    resume();
+  }
+
+  function show(damage = 0) {
+    const wrong = shrine.wrong ?? 0;
+    const companion = currentCompanion();
+    const helper = companion?.name ?? (joined ? 'ソソ' : null);
+    const lines = [question.prompt];
+    if (wrong >= 3) lines.push('ヒント　' + question.hint);
+    if (helper && (wrong === 3 || (chapter + wrong) % 3 === 0)) {
+      lines.push(helper === 'ソソ' ? 'ソソが足もとで鳴いた。' :
+        helper + (wrong === 3 ? '「ヒントを手がかりに、四つの答えを見比べよう」' : '「焦らなくていいよ。ゆっくり考えよう」'));
+    }
+    panel('石碑のなぞなぞ', lines, [
+      ...riddleChoices(question).map(choice => [choice, () => {
+        if (choice === question.answer) {
+          shrine.solved = true;
+          shrine.wrong = 0;
+          sealEffect = {x: shrine.x, y: shrine.row, until: clock + .9};
+          close();
+          audio.play('seal');
+          say('正解！ 封印が解除された。' + chapters[chapter][1], 7);
+          save();
+          return;
         }
-        shrine.solved = true;
-        resume();
-        burstUntil = clock + .45;
-        audio.play('special');
-        say(chapters[chapter][1], 7);
+        shrine.wrong = Math.min(999, wrong + 1);
+        const penalty = Math.max(1, Math.ceil(maxHP() * .1));
+        player.hp = Math.max(0, player.hp - penalty);
+        audio.play('hit');
+        $('quiz-flash').getAnimations().forEach(animation => animation.cancel());
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          $('quiz-flash').animate([{opacity: .65}, {opacity: 0}], {duration: 420});
+        }
+        if (!player.hp) {
+          quizOpen = false;
+          delete $('panel').dataset.quiz;
+          shrineDefeated = true;
+          save();
+          defeat('一美は倒れた', '不正解　−' + penalty + ' HP。石碑の反動で一美は力尽きた。');
+          return;
+        }
         save();
+        show(penalty);
       }]),
-      ['あとで解く', () => { player.x = shrine.x - 19; resume(); }]
+      ['あとで解く', () => {
+        player.x = shrine.x - 19;
+        close();
+        save();
+      }]
     ]);
+    $('panel').dataset.quiz = 'true';
+    if (damage) {
+      const feedback = document.createElement('p');
+      feedback.className = 'quiz-damage';
+      feedback.setAttribute('role', 'status');
+      feedback.textContent = '不正解　−' + damage + ' HP';
+      $('panel-body').append(feedback);
+    }
   }
   show();
 }
@@ -699,10 +764,10 @@ function hurtPlayer(power) {
   if (!player.hp) defeat('一美は倒れた');
 }
 
-function defeat(title) {
+function defeat(title, detail = '呼びかけても返事はなく、足もとの光が静かに消えた。') {
   audio.setTrack('loss');
   clearInput();
-  panel(title, ['呼びかけても返事はなく、足もとの光が静かに消えた。', '野営地から旅を再開できる。'], [
+  panel(title, [detail, '野営地から旅を再開できる。'], [
     ['野営地に戻る', () => {
       if (trialVitals) {
         leaveTrial();
@@ -710,6 +775,7 @@ function defeat(title) {
         return;
       }
       battle = null;
+      shrineDefeated = false;
       resetCat();
       player.x = camps[checkpoint].x;
       player.y = 104;

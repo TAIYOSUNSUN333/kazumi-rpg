@@ -340,6 +340,21 @@ function render() {
   if (mode === 'title' || mode === 'home') drawHome();
   else if (battle) drawBattle();
   else drawField(chapter, camera);
+  if (mode === 'field' && sealEffect && clock < sealEffect.until && !reducedMotion.matches) {
+    const progress = 1 - (sealEffect.until - clock) / .9;
+    const x = sealEffect.x - camera, y = sealEffect.y + 83;
+    ctx.globalAlpha = 1 - progress;
+    ctx.strokeStyle = '#ffeaa3';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 12 + progress * 44, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      diamond(x + Math.cos(angle) * progress * 48, y + Math.sin(angle) * progress * 48 - progress * 12, 3, 5, '#ffeaa3');
+    }
+    ctx.globalAlpha = 1;
+  }
   if (clock < burstUntil && !reducedMotion.matches) {
     const x = battle ? battle.heroX : player.x - camera;
     const y = battle ? 215 : player.y + 86;
