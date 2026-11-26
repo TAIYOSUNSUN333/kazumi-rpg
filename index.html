@@ -1,13 +1,69 @@
-<!doctype html><html lang=ja><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>一美のスター街道</title><style>*{box-sizing:border-box}body{margin:0;background:#171329;color:#fff;font:14px sans-serif;touch-action:manipulation}main{max-width:480px;margin:auto;background:linear-gradient(#39264d,#171329);min-height:100dvh;padding:10px}h2{text-align:center;color:#ffd5e5;margin:5px;font-family:serif}canvas{width:100%;image-rendering:pixelated;border:2px solid #d8a775;border-radius:8px}#hud,#log{padding:8px;background:#292039;border-radius:8px;margin:5px 0}#log{min-height:44px;color:#ffe3b7}button{background:#573e70;color:white;border:1px solid #c69ab9;border-radius:12px;padding:12px;font-weight:bold;touch-action:manipulation}nav{display:flex;justify-content:space-between;gap:6px;margin:8px 0}nav button{flex:1}small{color:#cbb9d8}#party{font-size:12px;color:#ffd2e2}body{font-size:16px}main{max-width:560px;padding:clamp(10px,3vw,20px)}canvas{display:block;width:100%;max-height:46vh;object-fit:contain;background:#221829}button{min-height:48px;font-size:1rem;cursor:pointer}button:focus-visible{outline:3px solid #ffe5a1;outline-offset:2px}button:disabled{opacity:.45;cursor:default}nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}#shrine,#battle{padding:10px;background:#302440;border-radius:8px}#battle nav{grid-template-columns:repeat(2,minmax(0,1fr))}#walk{max-width:290px;margin-inline:auto;grid-template-areas:". up ." "left down right"}[data-k=up]{grid-area:up}[data-k=down]{grid-area:down}[data-k=left]{grid-area:left}[data-k=right]{grid-area:right}.movement{touch-action:none}#party{font-size:.875rem}#chapter-note{font-size:.9375rem;line-height:1.5;margin:8px 0;color:#f0dce6}[hidden]{display:none!important}
+<!doctype html><html lang=ja><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1,viewport-fit=cover'><title>一美のスター街道</title><style>*{box-sizing:border-box}body{margin:0;background:#171329;color:#fff;font:14px sans-serif;touch-action:manipulation}main{max-width:480px;margin:auto;background:linear-gradient(#39264d,#171329);min-height:100dvh;padding:10px}h2{text-align:center;color:#ffd5e5;margin:5px;font-family:serif}canvas{width:100%;image-rendering:pixelated;border:2px solid #d8a775;border-radius:8px}#hud,#log{padding:8px;background:#292039;border-radius:8px;margin:5px 0}#log{min-height:44px;color:#ffe3b7}button{background:#573e70;color:white;border:1px solid #c69ab9;border-radius:12px;padding:12px;font-weight:bold;touch-action:manipulation}nav{display:flex;justify-content:space-between;gap:6px;margin:8px 0}nav button{flex:1}small{color:#cbb9d8}#party{font-size:12px;color:#ffd2e2}body{font-size:16px}main{max-width:560px;padding:clamp(10px,3vw,20px)}canvas{display:block;width:100%;max-height:46vh;object-fit:contain;background:#221829}button{min-height:48px;font-size:1rem;cursor:pointer}button:focus-visible{outline:3px solid #ffe5a1;outline-offset:2px}button:disabled{opacity:.45;cursor:default}nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}#shrine,#battle{padding:10px;background:#302440;border-radius:8px}#battle nav{grid-template-columns:repeat(2,minmax(0,1fr))}#walk{max-width:290px;margin-inline:auto;grid-template-areas:". up ." "left down right"}[data-k=up]{grid-area:up}[data-k=down]{grid-area:down}[data-k=left]{grid-area:left}[data-k=right]{grid-area:right}.movement{touch-action:none}#party{font-size:.875rem}#chapter-note{font-size:.9375rem;line-height:1.5;margin:8px 0;color:#f0dce6}[hidden]{display:none!important}
 main{min-height:100vh;min-height:100dvh}
 canvas{height:auto;max-height:none;aspect-ratio:320/208}
 nav button{min-width:0;overflow-wrap:anywhere}
 .movement{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
-@media(max-width:380px){nav button{padding-inline:6px}#hud{font-size:.9375rem}}
-@media(orientation:landscape) and (max-height:550px){
-  canvas{width:auto;max-width:100%;height:42vh;height:42dvh;margin-inline:auto}
+main{padding-bottom:max(14px,env(safe-area-inset-bottom))}
+#board{min-width:0}
+#controls{display:grid;gap:8px}
+#controls:has(#battle:not([hidden]),#shrine:not([hidden])) #travel{display:none}
+#travel{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center}
+#walk{width:100%;grid-template-columns:repeat(3,minmax(44px,1fr));margin:0;gap:4px}
+#walk button{padding:0;font-size:1.3rem}
+#actions{grid-template-columns:1fr 1fr;margin:0}
+#next{grid-column:1/-1;background:#8b4167;border-color:#f6a9bf}
+button:active{background:#765487}
+#chapter-note{border-left:3px solid #c893aa;padding-left:10px}
+#enemy{display:block}
+#enemy-hp{width:100%;height:12px;accent-color:#ec91ad}
+#intent{margin:4px 0;color:#ffe3b7}
+#intent[data-danger=true]{color:#ffabb4;font-weight:bold}
+#commands{gap:8px;margin-bottom:0}
+#commands small{display:block;font-weight:normal;margin-top:2px}
+@media(max-width:380px){
+  nav button{padding-inline:5px}
+  #hud{font-size:.9375rem}
+  #travel{gap:6px}
 }
-</style><main><h2>✦ 一美のスター街道 ✦</h2><div id=hud></div><canvas id=c width=320 height=208 aria-label="一美と仲間たちが歩く街道"></canvas><div id=log role=status aria-live=polite>天空の神殿にいる星喰いの王・ノクスを倒し、消えゆく星を取り戻そう。</div><div id=party></div><p id=chapter-note></p><nav id=walk aria-label="移動"><button class=movement data-k=up>上へ</button><button class=movement data-k=left>左へ</button><button class=movement data-k=right>右へ</button><button class=movement data-k=down>下へ</button></nav><section id=shrine hidden></section><section id=battle hidden aria-label="戦闘"><strong id=enemy></strong><nav id=commands aria-label="戦闘コマンド"></nav></section><nav><button id=next>先へ進む</button><button id=save>保存</button><button id=reset>最初から</button></nav><small>「先へ進む」で探索。十字ボタン／矢印キーで脇道へ。各地の石碑を解いて、12章の旅を進めよう。</small></main><script>
+@media(orientation:landscape) and (max-height:550px) and (min-width:600px){
+  main{max-width:980px;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,1fr);gap:12px;align-items:start}
+  canvas{max-height:55dvh;object-fit:contain}
+  #controls{padding-top:8px}
+}
+</style>
+<main>
+  <section id=board aria-label="ゲーム画面">
+    <h2>✦ 一美のスター街道 ✦</h2>
+    <div id=hud></div>
+    <canvas id=c width=320 height=208 aria-label="一美と仲間たちが歩く街道"></canvas>
+    <div id=log role=status aria-live=polite>天空の神殿にいる星喰いの王・ノクスを倒し、消えゆく星を取り戻そう。</div>
+  </section>
+  <section id=controls aria-label="ゲーム操作">
+    <div id=travel>
+      <nav id=walk aria-label="移動">
+        <button class=movement data-k=up aria-label="上へ">↑</button>
+        <button class=movement data-k=left aria-label="左へ">←</button>
+        <button class=movement data-k=right aria-label="右へ">→</button>
+        <button class=movement data-k=down aria-label="下へ">↓</button>
+      </nav>
+      <nav id=actions aria-label="冒険の操作">
+        <button id=next>先へ進む</button>
+        <button id=save>保存</button>
+        <button id=reset>最初から</button>
+      </nav>
+    </div>
+    <section id=shrine hidden aria-label="石碑"></section>
+    <section id=battle hidden aria-label="戦闘">
+      <strong id=enemy></strong>
+      <progress id=enemy-hp aria-label="敵の残りHP"></progress>
+      <p id=intent></p>
+      <nav id=commands aria-label="戦闘コマンド"></nav>
+    </section>
+    <div id=party></div>
+    <p id=chapter-note></p>
+  </section>
+</main>
+<script>
 const c=document.querySelector('canvas'),g=c.getContext('2d'),$=id=>document.getElementById(id);let x=25,y=104,hp=100,xp=0,lv=1,party=[],art=0,keys={},stage=0,done=false,attack=0;const chapterInfo=[
   ['桜の街道','花守りの獅子','花は水を飲み、月を仰ぐ。','水','月'],
   ['月影の森','月蝕の梟','月影に残るのは羽根と鈴の音。','羽','鈴'],
@@ -23,18 +79,32 @@ const c=document.querySelector('canvas'),g=c.getContext('2d'),$=id=>document.get
   ['天空の神殿','星喰いの王・ノクス','星は沈み、日が昇る。最後に月が眠る。','星','日','月']
 ];
 const chapterNotes=[
-  '村の夜空から最初の星が消えた。桜の道をたどり、星の欠片と旅の仲間を探そう。',
-  'クルミは、夜空の穴が森の奥へ広がっていることに気づいた。月明かりが残るうちに石碑へ。',
-  '潮の向こうに消えた漁火。浜辺に散った星の欠片を拾い、海の番竜が守る渡し場へ。',
-  '坑夫たちは、自分の影が夜ごとに薄くなると言う。坑道の奥で光を奪う鏡を探ろう。',
-  '強風で橋が落ちた。山肌の石碑に刻まれた言葉が、峡谷を越える手がかりになる。',
-  '時計街では誰もが同じ夕刻を繰り返している。時を止める騎士に会い、鐘を取り戻そう。',
-  '霧の中から聞こえる歌に、ソソが足を止めた。歌の主を追って沼の石碑へ向かう。',
-  '消えゆく太陽を追う一美たち。砂の下にうもれた祭壇を開けば、夜の道が見える。',
-  '恵美ちゃんの灯りが、氷の下の星を照らした。湖に映った手がかりを拾おう。',
-  '星図にはすでに消えた星の名が残っていた。残された望遠鏡が、ノクスの居場所を指している。',
-  '雲の上から、一美は旅を始めた村を見下ろした。星を返すため、朝日を待って神殿へ。',
-  'ノクスは消えた星を鎧に閉じ込めていた。最後の封印を解いて、星のない夜を終わらせよう。'
+  '一美「舞台の帰り道は、いつもあの星が照らしてくれたの。今度は私が連れ戻す番だね」',
+  'クルミ「森の鈴、星が消えた晩から鳴らないんだ。耳を澄ませて。風にはまだ音が残ってる」',
+  '浜辺の渡し守「沖の灯が消えて船が戻れない。竜は最後の漁火を守っているだけなんだ」',
+  '一郎「坑夫たちは仕事を止めてでも、互いの声が届くよう歌ってる。この先も声をかけ合おう」',
+  '一美は切れた橋の手すりに、向こう岸から渡された布を結んだ。谷を吹き抜ける風が布を持ち上げる。',
+  '時計職人「鐘が鳴らなくなった日、娘と仲直りするつもりだった。次の朝が来たら、今度こそ」',
+  'ソソ「沼の歌、桜の村で聞いた子守歌と同じだ。あの声、誰かを探してるんじゃないかな」',
+  '砂に埋もれた祭壇には、夜道を行く見知らぬ旅人のために、灯をともす人々が刻まれていた。',
+  '恵美ちゃん「氷の下で星がまばたきしてる。まだ生きてるよ。もう少しだけ、待っててね」',
+  '星図の余白には「ノクス」と署名があった。そこには消えた星の名と、星に願いを託した人々の名前が並んでいた。',
+  '一美「ノクスは、忘れられるのが怖かったのかもしれない。だからって、皆の夜空を閉じ込めていいわけじゃない」',
+  'ノクス「消える星を見るくらいなら、私の鎧の中で永遠に光ればいい」一美「帰り道を照らす光は、空にあってこそだよ」'
+];
+const shrineMemories=[
+  '石碑に村の舞台が映った。消えた星の光を頼りに、一美が初めて歌った夜だ。',
+  '封印がほどけ、風に乗って鈴が鳴った。森の奥でまどろんでいた鳥たちが目を開く。',
+  '波間にひとつ、漁火が浮かんだ。岸から渡し守が応えるように灯を掲げた。',
+  '鏡に星空が戻ると、坑夫たちの足もとに影が伸びた。',
+  '石碑から吹いた風が、対岸まで張り渡された新しい綱を鳴らした。',
+  '鐘が夕刻の終わりを告げた。時計職人は店を飛び出し、娘の家へ走った。',
+  '歌が止まり、霧の向こうからもうひとつの声がした。ようやく届いた返事だった。',
+  '祭壇の灯がともった。砂の上に、夜を越えるための道しるべが浮かび上がる。',
+  '氷に走ったひびから、星を映す水があふれた。恵美ちゃんが手のひらで光をすくう。',
+  '望遠鏡の先で、神殿の窓が一瞬だけ光った。星図に残された最後の座標だ。',
+  '雲がほどけ、故郷の家々に朝日が当たった。一美は村を見下ろし、神殿への階段を上る。',
+  '封印が開いた。鎧の内側から聞こえる星の音に、一美は村で歌った最初の旋律を重ねた。'
 ];
 const span=960, last=chapterInfo.length-1, limit=span*chapterInfo.length-1;
 const camps=chapterInfo.map((_,i)=>({x:i*span+30,row:104}));
@@ -42,10 +112,10 @@ const shrines=chapterInfo.map((_,i)=>({x:i*span+775,row:i%2?146:62,solved:false}
 const npcs=[{x:125,n:'ソソ'},{x:290,n:'クルミ'},{x:460,n:'一郎'},{x:630,n:'恵美ちゃん'},{x:710,n:'タク'}];
 const gems=chapterInfo.flatMap((_,i)=>[140,340,550,690].map((spot,j)=>({x:i*span+spot,on:true,row:[62,146,62,146][(j+i)%4]})));
 const foeKinds=[
-  {name:'影牙',trait:'猛攻',hint:'三手ごとに大技。加護で受けよう。'},
+  {name:'影牙',trait:'猛攻',hint:'予告された大技を守りで受けると、反撃の好機が生まれる。'},
   {name:'鎧殻',trait:'装甲',hint:'物理に強い。星の力が効く。'},
   {name:'星喰い',trait:'吸魔',hint:'星の力を吸収する。仲間の物理技を使おう。'},
-  {name:'霧の妖',trait:'幻惑',hint:'攻撃を予告せず、時々大きなダメージを与える。'}
+  {name:'霧の妖',trait:'幻惑',hint:'幻惑に惑わされず、攻撃の予告を見よう。'}
 ];
 const enemies=chapterInfo.flatMap((chapter,i)=>[205,260,400,525,610,720,815,910].map((spot,j)=>{
   const guardian=j===7, optional=j===1||j===4;
@@ -55,31 +125,40 @@ const enemies=chapterInfo.flatMap((chapter,i)=>[205,260,400,525,610,720,815,910]
     name:guardian?chapter[1]:foeKinds[kind].name};
 }));
 let shownChapter=-1;
-let shrineOpen=null, answer=[], turns=0, focus=3, guard=false, used={};
+let shrineOpen=null, answer=[], turns=0, focus=3, guard=false, exposed=false, used={};
 const chapterOf=position=>Math.min(last,Math.floor(position/span));
 const hpMax=()=>100+Math.min(lv-1,25)*5;
 const gemLane=index=>gems[index].row;
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+let shrineGlow=0;
 function say(s){$('log').textContent=s}function rect(x,y,w,h,col){g.fillStyle=col;g.fillRect(Math.floor(x),Math.floor(y),w,h)}function sprite(a,b,type){let col=type==='一美'?'#df568e':type==='ソソ'?'#e8c3a3':type==='クルミ'?'#b18ac9':'#5e8bb9';rect(a+3,b,12,4,'#402b45');rect(a,b+4,18,10,'#402b45');rect(a+4,b+5,10,9,'#ffe0bd');rect(a+6,b+8,2,3,'#37243c');rect(a+12,b+8,2,3,'#37243c');rect(a+2,b+14,14,9,col);rect(a,b+16,3,6,col);rect(a+15,b+16,3,6,col);rect(a+3,b+23,5,4,'#49324d');rect(a+11,b+23,5,4,'#49324d');if(type==='ソソ'||type==='クルミ'){rect(a,b,4,6,col);rect(a+14,b,4,6,col);rect(a+1,b+14,16,10,col)}}let foe=null, shield=0, destination=null;
 const weather=['雨','風','雷','地震','怒涛','宇宙'];
 function startBattle(enemy){
-  foe=enemy; shield=0; turns=0;focus=3;guard=false;used={}; destination=null; clearMovement();
+  foe=enemy; shield=0; turns=0;focus=3;guard=false;exposed=false;used={}; destination=null; clearMovement();
   $('walk').hidden=true; $('next').disabled=true; $('battle').hidden=false;
   showCommands();
   say(enemy.guardian?enemy.name+'が道をふさいだ！':enemy.name+'が現れた。'+foeKinds[enemy.kind].hint);
 }
-function hitForecast(){
+function enemyIntent(){
   const base=Math.min(25,8+Math.floor(foe.chapter*1.4)+(foe.guardian?4:0));
-  return (turns+1)%3===0?base*2:base;
+  const finalPhase=foe.guardian&&foe.chapter===last&&foe.h<=foe.max/2;
+  const heavy=(turns+1)%(finalPhase?2:3)===0;
+  return {heavy,damage:heavy?base*2:base,label:heavy?(finalPhase?'星砕き':'大技'):foe.kind===3&&!foe.guardian?'幻惑':'通常攻撃'};
 }
 function showCommands(){
-  $('enemy').textContent=foe.name+'　HP '+Math.max(0,foe.h)+' / '+foe.max+
-    '　集中 '+focus+'/3'+((turns+1)%3===0?'　大技の構え':'');
+  const intent=enemyIntent();
+  $('enemy').textContent=foe.name+'　HP '+foe.h+' / '+foe.max+'　集中 '+focus+'/3';
+  $('enemy-hp').max=foe.max;
+  $('enemy-hp').value=foe.h;
+  $('intent').dataset.danger=intent.heavy;
+  $('intent').textContent='予告 '+intent.label+'（'+intent.damage+'）'+
+    (exposed?'　次の攻撃は威力アップ':intent.heavy?'　守りで反撃の好機':'');
   const commands=$('commands');
   commands.replaceChildren();
   const moves=[
     ['一美・攻撃','physical',()=>[18+lv*2,'一美の攻撃']],
-    ['一美・星の力（集中1）','star',()=>{focus--;return [27+lv*2+Math.min(30,art),'一美の星の力']},focus<1],
-    ['一美・守りと集中','guard',()=>{focus=Math.min(3,focus+1);guard=true;return [0,'一美が身を守った']}]
+    ['一美・星の力（集中1）','star',()=>{focus--;return [27+lv*2+Math.min(30,art),'一美の星の力']},focus<1,null,'装甲に有効'],
+    ['一美・守りと集中','guard',()=>{focus=Math.min(3,focus+1);guard=true;return [0,'一美が身を守った']},false,null,'被害を抑え、集中を1回復']
   ];
   if(party.includes('ソソ'))moves.push(['ソソ・猛攻','physical',()=>[38+lv*2,'ソソが飛びかかった'],used.soso===turns-1,'soso']);
   if(party.includes('クルミ'))moves.push(['クルミ・加護','guard',()=>{shield=2;return [0,'クルミが加護をかけた']},used.kurumi!==undefined&&turns-used.kurumi<4,'kurumi']);
@@ -92,16 +171,31 @@ function showCommands(){
     const i=[.30,.55,.75,.89,.98,1].findIndex(threshold=>roll<threshold);
     return [[8,18,35,65,100,220][i],'タクが'+weather[i]+'を呼んだ'];
   },used.taku!==undefined&&turns-used.taku<3,'taku']);
-  for(const [label,type,move,disabled,id] of moves){
+  for(const [label,type,move,disabled,id,detail] of moves){
     const button=document.createElement('button');
     button.textContent=label;button.disabled=Boolean(disabled);
-    button.onclick=()=>{if(!button.disabled)takeTurn(move,type,id)};
+    if(detail){
+      const hint=document.createElement('small');
+      hint.textContent=detail;
+      button.append(hint);
+    }
+    button.onclick=()=>{
+      if(button.disabled)return;
+      const index=Array.from(commands.children).indexOf(button);
+      const keyboard=document.activeElement===button;
+      takeTurn(move,type,id);
+      if(keyboard&&foe&&hp>0){
+        const replacement=commands.children[index];
+        (replacement&&!replacement.disabled?replacement:commands.querySelector('button:not(:disabled)'))?.focus();
+      }else if(keyboard&&!foe&&!done)$('next').focus();
+    };
     commands.append(button);
   }
 }
 function takeTurn(move,type,id){
   if(!foe||hp<=0)return;
   if(id)used[id]=turns;
+  const intent=enemyIntent();
   let [points,message]=move();
   if(points){
     if(foe.kind===1&&type==='physical'){points=Math.ceil(points/2);message+='（装甲）'}
@@ -109,21 +203,23 @@ function takeTurn(move,type,id){
     if(foe.guardian&&foe.chapter===last&&foe.h<=foe.max/2&&type==='physical'){
       points=Math.ceil(points*.75);message+='（星の鎧）';
     }
-    attack=18;foe.h=Math.max(0,foe.h-points);
+    if(exposed){points=Math.ceil(points*1.5);exposed=false;message+='（反撃の好機）'}
+    attack=reducedMotion.matches?0:18;foe.h=Math.max(0,foe.h-points);
   }
   if(foe.h===0){
     xp+=foe.guardian?40:20;lv=1+Math.floor(xp/80);
     done=foe.guardian&&foe.chapter===last;
     hp=foe.guardian?hpMax():Math.min(hpMax(),hp+26);
-    say(done?'星喰いの王・ノクスを倒し、夜空に星が戻った！ 一美の冒険 完結 ✦':
+    say(done?'ノクスは鎧を開き、星を夜空へ返した。村の舞台に戻った一美は、旅で聞いた声を歌にした。✦ 完結':
       message+'。'+foe.name+'を倒した！'+(foe.guardian?' 次の地へ進める。':' HPを回復した。'));
     foe=null;$('battle').hidden=true;$('walk').hidden=done;$('next').disabled=done;
     saveProgress(false);return;
   }
-  const expected=hitForecast();
-  const hit=shield>0?0:guard?Math.ceil(expected/4):expected;
+  const hit=shield>0?0:guard?Math.ceil(intent.damage/4):intent.damage;
+  const opening=intent.heavy&&guard;
+  if(opening)exposed=true;
   guard=false;shield=Math.max(0,shield-1);hp=Math.max(0,hp-hit);turns++;
-  say(hp?message+(points?'。'+points+'ダメージ':'')+(hit?'。反撃でHPが'+hit+'減った。':'。加護で反撃を防いだ。'):'一美は力尽きた。「再挑戦」で立て直そう。');
+  say(hp?message+(points?'。'+points+'ダメージ':'')+(hit?'。反撃でHPが'+hit+'減った。':'。加護で反撃を防いだ。')+(opening?' 敵の体勢が崩れた！':''):'一美は力尽きた。「再挑戦」で立て直そう。');
   if(hp){showCommands();return}
   const button=document.createElement('button');button.textContent='再挑戦';
   button.onclick=()=>{hp=hpMax();foe.h=foe.max;startBattle(foe)};
@@ -144,7 +240,7 @@ function openShrine(shrine,i){
       prompt.textContent=chapterInfo[i][2]+'　'+answer.join(' ＞ ');
       if(answer.length!==required)return;
       if(answer.every((entry,index)=>entry===symbols[index])){
-        shrine.solved=true;closeShrine();say('封印が解けた。守護者のもとへ進もう。');saveProgress(false);
+        shrine.solved=true;shrineGlow=reducedMotion.matches?0:36;closeShrine();say(shrineMemories[i]);saveProgress(false);
       }else{answer=[];say('石碑は反応しない。手がかりを読み直そう。')}
     };
     buttons.append(button);
@@ -171,8 +267,8 @@ function polygon(color,points){
 }
 function drawField(){
   const cam=Math.min(limit-319,Math.max(0,x-112));
-  const terrain=['#354c40','#233e43','#294960','#39354c'][stage%4];
-  const foliage=['#ba738f','#507c6e','#6585a9','#8876a9'][stage%4];
+  const terrain=['#354c40','#233e43','#294960','#39354c','#45576a','#59444c','#3a504c','#755141','#395976','#34324b','#5e5475','#382447'][stage];
+  const foliage=['#ba738f','#507c6e','#6585a9','#8876a9','#798fa1','#ad7762','#7b9374','#c78a61','#99b9cf','#a297ba','#c2a3be','#a9578b'][stage];
   rect(0,0,320,208,terrain);
   rect(0,89,320,30,'#ac967b');
   rect(0,92,320,24,'#c0ab87');
@@ -209,6 +305,15 @@ function drawField(){
     rect(shrine.x-cam-7,shrine.row-9,14,15,'#d2ab81');
   }
   sprite(x-cam-9,y-20,'一美');
+  if(shrineGlow){
+    const radius=(37-shrineGlow)*1.8;
+    g.strokeStyle='#ffe3a6';
+    g.globalAlpha=shrineGlow/36;
+    g.beginPath();
+    g.arc(shrines[stage].x-cam,shrines[stage].row,radius,0,Math.PI*2);
+    g.stroke();
+    g.globalAlpha=1;
+  }
 }
 function drawBattle(){
   const boss=foe===enemies[enemies.length-1];
@@ -223,7 +328,7 @@ function drawBattle(){
     rect(318-inset,top,2,208-top*2,'#554761');
   }
   for(const row of [149,164,187])rect(0,row,320,1,'#524055');
-  const aura=attack>7?'#efa8a5':boss?'#9c487a':'#657999';
+  const aura=attack>7?'#efa8a5':exposed?'#e0ad72':enemyIntent().heavy?'#bd5876':boss?'#9c487a':'#657999';
   const width=boss?65:42;
   polygon(aura,[[160-width,146],[160-width-17,106],[140,118],[160,65],[180,118],[160+width+17,106],[160+width,146],[160,162]]);
   polygon('#322139',[[126,96],[145,105],[175,105],[194,96],[186,138],[160,154],[134,138]]);
@@ -242,6 +347,7 @@ function clearMovement(){
 }
 function step(){
   if(attack)attack--;
+  if(shrineGlow)shrineGlow--;
   if(!done&&hp>0&&!foe&&!shrineOpen){
     if(destination!==null){
       move(Math.sign(destination.x-x)*Math.min(3,Math.abs(destination.x-x)),Math.sign(destination.y-y)*Math.min(3,Math.abs(destination.y-y)));
@@ -291,11 +397,12 @@ document.querySelectorAll('[data-k]').forEach(button=>{
     if(event.button!==0||foe||done||shrineOpen)return;
     destination=null;
     button.setPointerCapture(event.pointerId);
+    move(key==='right'?8:key==='left'?-8:0,key==='down'?8:key==='up'?-8:0);
     pointers.set(event.pointerId,key);
   };
   button.onpointerup=button.onpointercancel=button.onlostpointercapture=event=>pointers.delete(event.pointerId);
   button.onclick=event=>{
-    if(foe||done||shrineOpen)return;
+    if(event.detail!==0||foe||done||shrineOpen)return;
     destination=null;
     move(key==='right'?8:key==='left'?-8:0,key==='down'?8:key==='up'?-8:0);
   };
