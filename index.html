@@ -1,0 +1,361 @@
+<!doctype html><html lang=ja><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>一美のスター街道</title><style>*{box-sizing:border-box}body{margin:0;background:#171329;color:#fff;font:14px sans-serif;touch-action:manipulation}main{max-width:480px;margin:auto;background:linear-gradient(#39264d,#171329);min-height:100dvh;padding:10px}h2{text-align:center;color:#ffd5e5;margin:5px;font-family:serif}canvas{width:100%;image-rendering:pixelated;border:2px solid #d8a775;border-radius:8px}#hud,#log{padding:8px;background:#292039;border-radius:8px;margin:5px 0}#log{min-height:44px;color:#ffe3b7}button{background:#573e70;color:white;border:1px solid #c69ab9;border-radius:12px;padding:12px;font-weight:bold;touch-action:manipulation}nav{display:flex;justify-content:space-between;gap:6px;margin:8px 0}nav button{flex:1}small{color:#cbb9d8}#party{font-size:12px;color:#ffd2e2}body{font-size:16px}main{max-width:560px;padding:clamp(10px,3vw,20px)}canvas{display:block;width:100%;max-height:46vh;object-fit:contain;background:#221829}button{min-height:48px;font-size:1rem;cursor:pointer}button:focus-visible{outline:3px solid #ffe5a1;outline-offset:2px}button:disabled{opacity:.45;cursor:default}nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}#shrine,#battle{padding:10px;background:#302440;border-radius:8px}#battle nav{grid-template-columns:repeat(2,minmax(0,1fr))}#walk{max-width:290px;margin-inline:auto;grid-template-areas:". up ." "left down right"}[data-k=up]{grid-area:up}[data-k=down]{grid-area:down}[data-k=left]{grid-area:left}[data-k=right]{grid-area:right}.movement{touch-action:none}#party{font-size:.875rem}#chapter-note{font-size:.9375rem;line-height:1.5;margin:8px 0;color:#f0dce6}[hidden]{display:none!important}
+main{min-height:100vh;min-height:100dvh}
+canvas{height:auto;max-height:none;aspect-ratio:320/208}
+nav button{min-width:0;overflow-wrap:anywhere}
+.movement{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+@media(max-width:380px){nav button{padding-inline:6px}#hud{font-size:.9375rem}}
+@media(orientation:landscape) and (max-height:550px){
+  canvas{width:auto;max-width:100%;height:42vh;height:42dvh;margin-inline:auto}
+}
+</style><main><h2>✦ 一美のスター街道 ✦</h2><div id=hud></div><canvas id=c width=320 height=208 aria-label="一美と仲間たちが歩く街道"></canvas><div id=log role=status aria-live=polite>天空の神殿にいる星喰いの王・ノクスを倒し、消えゆく星を取り戻そう。</div><div id=party></div><p id=chapter-note></p><nav id=walk aria-label="移動"><button class=movement data-k=up>上へ</button><button class=movement data-k=left>左へ</button><button class=movement data-k=right>右へ</button><button class=movement data-k=down>下へ</button></nav><section id=shrine hidden></section><section id=battle hidden aria-label="戦闘"><strong id=enemy></strong><nav id=commands aria-label="戦闘コマンド"></nav></section><nav><button id=next>先へ進む</button><button id=save>保存</button><button id=reset>最初から</button></nav><small>「先へ進む」で探索。十字ボタン／矢印キーで脇道へ。各地の石碑を解いて、12章の旅を進めよう。</small></main><script>
+const c=document.querySelector('canvas'),g=c.getContext('2d'),$=id=>document.getElementById(id);let x=25,y=104,hp=100,xp=0,lv=1,party=[],art=0,keys={},stage=0,done=false,attack=0;const chapterInfo=[
+  ['桜の街道','花守りの獅子','花は水を飲み、月を仰ぐ。','水','月'],
+  ['月影の森','月蝕の梟','月影に残るのは羽根と鈴の音。','羽','鈴'],
+  ['星降る海','潮の番竜','潮は風で満ち、砂に引く。','風','砂'],
+  ['水晶の坑道','鏡の甲虫','石を割って、火で照らせ。','石','火'],
+  ['風切りの峡谷','つむじの鷹','羽根は空へ。雲はその向こう。','羽','雲'],
+  ['錆びた時計街','ねじ巻きの騎士','鐘が鳴れば、歯車が回る。','鈴','歯'],
+  ['白霧の沼','沼底の姫','霧の下に水。その下に泥。','水','泥'],
+  ['夕焼けの砂丘','砂をまとう蜥蜴','砂から火が生まれ、火は夜を照らす。','砂','火'],
+  ['凍星の湖','氷鏡の鯨','凍った水面に月が映る。','氷','月'],
+  ['崩れた天文台','星を読む巨人','遠くを見るには鏡、探すのは星。','鏡','星'],
+  ['夜明けの雲海','東雲の翼竜','雲を割る風が、朝日を呼ぶ。','風','日'],
+  ['天空の神殿','星喰いの王・ノクス','星は沈み、日が昇る。最後に月が眠る。','星','日','月']
+];
+const chapterNotes=[
+  '村の夜空から最初の星が消えた。桜の道をたどり、星の欠片と旅の仲間を探そう。',
+  'クルミは、夜空の穴が森の奥へ広がっていることに気づいた。月明かりが残るうちに石碑へ。',
+  '潮の向こうに消えた漁火。浜辺に散った星の欠片を拾い、海の番竜が守る渡し場へ。',
+  '坑夫たちは、自分の影が夜ごとに薄くなると言う。坑道の奥で光を奪う鏡を探ろう。',
+  '強風で橋が落ちた。山肌の石碑に刻まれた言葉が、峡谷を越える手がかりになる。',
+  '時計街では誰もが同じ夕刻を繰り返している。時を止める騎士に会い、鐘を取り戻そう。',
+  '霧の中から聞こえる歌に、ソソが足を止めた。歌の主を追って沼の石碑へ向かう。',
+  '消えゆく太陽を追う一美たち。砂の下にうもれた祭壇を開けば、夜の道が見える。',
+  '恵美ちゃんの灯りが、氷の下の星を照らした。湖に映った手がかりを拾おう。',
+  '星図にはすでに消えた星の名が残っていた。残された望遠鏡が、ノクスの居場所を指している。',
+  '雲の上から、一美は旅を始めた村を見下ろした。星を返すため、朝日を待って神殿へ。',
+  'ノクスは消えた星を鎧に閉じ込めていた。最後の封印を解いて、星のない夜を終わらせよう。'
+];
+const span=960, last=chapterInfo.length-1, limit=span*chapterInfo.length-1;
+const camps=chapterInfo.map((_,i)=>({x:i*span+30,row:104}));
+const shrines=chapterInfo.map((_,i)=>({x:i*span+775,row:i%2?146:62,solved:false}));
+const npcs=[{x:125,n:'ソソ'},{x:290,n:'クルミ'},{x:460,n:'一郎'},{x:630,n:'恵美ちゃん'},{x:710,n:'タク'}];
+const gems=chapterInfo.flatMap((_,i)=>[140,340,550,690].map((spot,j)=>({x:i*span+spot,on:true,row:[62,146,62,146][(j+i)%4]})));
+const foeKinds=[
+  {name:'影牙',trait:'猛攻',hint:'三手ごとに大技。加護で受けよう。'},
+  {name:'鎧殻',trait:'装甲',hint:'物理に強い。星の力が効く。'},
+  {name:'星喰い',trait:'吸魔',hint:'星の力を吸収する。仲間の物理技を使おう。'},
+  {name:'霧の妖',trait:'幻惑',hint:'攻撃を予告せず、時々大きなダメージを与える。'}
+];
+const enemies=chapterInfo.flatMap((chapter,i)=>[205,260,400,525,610,720,815,910].map((spot,j)=>{
+  const guardian=j===7, optional=j===1||j===4;
+  const max=guardian?(i===last?490:120+i*21):(i===0?30+j*7:70+i*12+j*5);
+  const kind=(i+j)%foeKinds.length;
+  return {x:i*span+spot,row:optional?(j===1?62:146):104,h:max,max,chapter:i,kind,guardian,optional,
+    name:guardian?chapter[1]:foeKinds[kind].name};
+}));
+let shownChapter=-1;
+let shrineOpen=null, answer=[], turns=0, focus=3, guard=false, used={};
+const chapterOf=position=>Math.min(last,Math.floor(position/span));
+const hpMax=()=>100+Math.min(lv-1,25)*5;
+const gemLane=index=>gems[index].row;
+function say(s){$('log').textContent=s}function rect(x,y,w,h,col){g.fillStyle=col;g.fillRect(Math.floor(x),Math.floor(y),w,h)}function sprite(a,b,type){let col=type==='一美'?'#df568e':type==='ソソ'?'#e8c3a3':type==='クルミ'?'#b18ac9':'#5e8bb9';rect(a+3,b,12,4,'#402b45');rect(a,b+4,18,10,'#402b45');rect(a+4,b+5,10,9,'#ffe0bd');rect(a+6,b+8,2,3,'#37243c');rect(a+12,b+8,2,3,'#37243c');rect(a+2,b+14,14,9,col);rect(a,b+16,3,6,col);rect(a+15,b+16,3,6,col);rect(a+3,b+23,5,4,'#49324d');rect(a+11,b+23,5,4,'#49324d');if(type==='ソソ'||type==='クルミ'){rect(a,b,4,6,col);rect(a+14,b,4,6,col);rect(a+1,b+14,16,10,col)}}let foe=null, shield=0, destination=null;
+const weather=['雨','風','雷','地震','怒涛','宇宙'];
+function startBattle(enemy){
+  foe=enemy; shield=0; turns=0;focus=3;guard=false;used={}; destination=null; clearMovement();
+  $('walk').hidden=true; $('next').disabled=true; $('battle').hidden=false;
+  showCommands();
+  say(enemy.guardian?enemy.name+'が道をふさいだ！':enemy.name+'が現れた。'+foeKinds[enemy.kind].hint);
+}
+function hitForecast(){
+  const base=Math.min(25,8+Math.floor(foe.chapter*1.4)+(foe.guardian?4:0));
+  return (turns+1)%3===0?base*2:base;
+}
+function showCommands(){
+  $('enemy').textContent=foe.name+'　HP '+Math.max(0,foe.h)+' / '+foe.max+
+    '　集中 '+focus+'/3'+((turns+1)%3===0?'　大技の構え':'');
+  const commands=$('commands');
+  commands.replaceChildren();
+  const moves=[
+    ['一美・攻撃','physical',()=>[18+lv*2,'一美の攻撃']],
+    ['一美・星の力（集中1）','star',()=>{focus--;return [27+lv*2+Math.min(30,art),'一美の星の力']},focus<1],
+    ['一美・守りと集中','guard',()=>{focus=Math.min(3,focus+1);guard=true;return [0,'一美が身を守った']}]
+  ];
+  if(party.includes('ソソ'))moves.push(['ソソ・猛攻','physical',()=>[38+lv*2,'ソソが飛びかかった'],used.soso===turns-1,'soso']);
+  if(party.includes('クルミ'))moves.push(['クルミ・加護','guard',()=>{shield=2;return [0,'クルミが加護をかけた']},used.kurumi!==undefined&&turns-used.kurumi<4,'kurumi']);
+  if(party.includes('一郎'))moves.push(['一郎・剛拳','physical',()=>[66+lv*3,'一郎の剛拳'],used.ichiro!==undefined&&turns-used.ichiro<3,'ichiro']);
+  if(party.includes('恵美ちゃん'))moves.push(['恵美ちゃん・治癒','heal',()=>{
+    const healed=Math.min(50+lv,hpMax()-hp);hp+=healed;return [0,'恵美ちゃんがHPを'+healed+'回復'];
+  },used.emi!==undefined&&turns-used.emi<4,'emi']);
+  if(party.includes('タク'))moves.push(['タク・天候を操る','weather',()=>{
+    const roll=Math.random();
+    const i=[.30,.55,.75,.89,.98,1].findIndex(threshold=>roll<threshold);
+    return [[8,18,35,65,100,220][i],'タクが'+weather[i]+'を呼んだ'];
+  },used.taku!==undefined&&turns-used.taku<3,'taku']);
+  for(const [label,type,move,disabled,id] of moves){
+    const button=document.createElement('button');
+    button.textContent=label;button.disabled=Boolean(disabled);
+    button.onclick=()=>{if(!button.disabled)takeTurn(move,type,id)};
+    commands.append(button);
+  }
+}
+function takeTurn(move,type,id){
+  if(!foe||hp<=0)return;
+  if(id)used[id]=turns;
+  let [points,message]=move();
+  if(points){
+    if(foe.kind===1&&type==='physical'){points=Math.ceil(points/2);message+='（装甲）'}
+    if(foe.kind===2&&type==='star'){points=Math.ceil(points/3);message+='（吸魔）'}
+    if(foe.guardian&&foe.chapter===last&&foe.h<=foe.max/2&&type==='physical'){
+      points=Math.ceil(points*.75);message+='（星の鎧）';
+    }
+    attack=18;foe.h=Math.max(0,foe.h-points);
+  }
+  if(foe.h===0){
+    xp+=foe.guardian?40:20;lv=1+Math.floor(xp/80);
+    done=foe.guardian&&foe.chapter===last;
+    hp=foe.guardian?hpMax():Math.min(hpMax(),hp+26);
+    say(done?'星喰いの王・ノクスを倒し、夜空に星が戻った！ 一美の冒険 完結 ✦':
+      message+'。'+foe.name+'を倒した！'+(foe.guardian?' 次の地へ進める。':' HPを回復した。'));
+    foe=null;$('battle').hidden=true;$('walk').hidden=done;$('next').disabled=done;
+    saveProgress(false);return;
+  }
+  const expected=hitForecast();
+  const hit=shield>0?0:guard?Math.ceil(expected/4):expected;
+  guard=false;shield=Math.max(0,shield-1);hp=Math.max(0,hp-hit);turns++;
+  say(hp?message+(points?'。'+points+'ダメージ':'')+(hit?'。反撃でHPが'+hit+'減った。':'。加護で反撃を防いだ。'):'一美は力尽きた。「再挑戦」で立て直そう。');
+  if(hp){showCommands();return}
+  const button=document.createElement('button');button.textContent='再挑戦';
+  button.onclick=()=>{hp=hpMax();foe.h=foe.max;startBattle(foe)};
+  $('commands').replaceChildren(button);button.focus();
+}
+function openShrine(shrine,i){
+  shrineOpen=shrine;answer=[];clearMovement();destination=null;
+  $('shrine').hidden=false;$('walk').hidden=true;$('next').disabled=true;
+  const symbols=chapterInfo[i].slice(3);
+  const required=symbols.length;
+  const options=[...new Set([...symbols,'鈴','星','水'])].sort();
+  const prompt=document.createElement('p');prompt.textContent=chapterInfo[i][2];
+  const buttons=document.createElement('nav');
+  for(const symbol of options){
+    const button=document.createElement('button');button.textContent=symbol;
+    button.onclick=()=>{
+      answer.push(symbol);
+      prompt.textContent=chapterInfo[i][2]+'　'+answer.join(' ＞ ');
+      if(answer.length!==required)return;
+      if(answer.every((entry,index)=>entry===symbols[index])){
+        shrine.solved=true;closeShrine();say('封印が解けた。守護者のもとへ進もう。');saveProgress(false);
+      }else{answer=[];say('石碑は反応しない。手がかりを読み直そう。')}
+    };
+    buttons.append(button);
+  }
+  const back=document.createElement('button');back.textContent='あとで解く';
+  back.onclick=()=>{move(-15,0);closeShrine()};
+  $('shrine').replaceChildren(prompt,buttons,back);
+}
+function closeShrine(){
+  shrineOpen=null;$('shrine').hidden=true;$('walk').hidden=false;$('next').disabled=false;
+}
+const near=(item,row,radius)=>Math.abs(item.x-x)<radius&&Math.abs(row-y)<radius;
+function move(dx,dy){
+  const index=chapterOf(x);
+  const edge=enemies[index*8+7];
+  const boundary=shrines[index].solved?(edge.h>0?edge.x:limit):shrines[index].x+19;
+  x=Math.max(0,Math.min(boundary,x+dx));
+  y=Math.max(44,Math.min(162,y+dy));
+}
+function polygon(color,points){
+  g.fillStyle=color;g.beginPath();g.moveTo(...points[0]);
+  for(const point of points.slice(1))g.lineTo(...point);
+  g.closePath();g.fill();
+}
+function drawField(){
+  const cam=Math.min(limit-319,Math.max(0,x-112));
+  const terrain=['#354c40','#233e43','#294960','#39354c'][stage%4];
+  const foliage=['#ba738f','#507c6e','#6585a9','#8876a9'][stage%4];
+  rect(0,0,320,208,terrain);
+  rect(0,89,320,30,'#ac967b');
+  rect(0,92,320,24,'#c0ab87');
+  for(let world=Math.floor(cam/24)*24;world<cam+350;world+=24){
+    const column=world/24, a=world-cam;
+    rect(a,100+(column%3)*5,7,2,'#9e886f');
+    for(const row of [26,181]){
+      rect(a+7,row+9,5,10,'#554254');
+      rect(a+2,row+3,15,10,foliage);
+      rect(a+5,row,10,5,foliage);
+    }
+    rect(a+3,55+(column%4)*22,3,2,'#928699');
+  }
+  gems.forEach((item,i)=>{
+    if(!item.on)return;
+    const a=item.x-cam,row=gemLane(i);
+    polygon('#ffe199',[[a,row-8],[a+6,row],[a,row+8],[a-6,row]]);
+  });
+  npcs.forEach(n=>{
+    if(n.used)return;
+    sprite(n.x-cam-9,84,n.n);
+    g.fillStyle='#fff5df';g.font='11px sans-serif';g.fillText(n.n,n.x-cam-9,80);
+  });
+  enemies.forEach(e=>{
+    if(e.h<=0)return;
+    const a=e.x-cam, offset=e.row-104;
+    rect(a-9,97+offset,18,13,'#763956');
+    rect(a-6,94+offset,12,4,'#ab5f83');
+    rect(a-5,100+offset,3,2,'#ffe199');rect(a+3,100+offset,3,2,'#ffe199');
+  });
+  for(const shrine of shrines){
+    if(shrine.solved)continue;
+    rect(shrine.x-cam-10,shrine.row-13,20,25,'#533b5f');
+    rect(shrine.x-cam-7,shrine.row-9,14,15,'#d2ab81');
+  }
+  sprite(x-cam-9,y-20,'一美');
+}
+function drawBattle(){
+  const boss=foe===enemies[enemies.length-1];
+  rect(0,0,320,208,boss?'#22162e':'#1c2935');
+  rect(118,58,84,80,'#10101e');
+  polygon('#343249',[[0,0],[118,58],[118,138],[0,208]]);
+  polygon('#343249',[[320,0],[202,58],[202,138],[320,208]]);
+  polygon('#261f39',[[0,208],[118,138],[202,138],[320,208]]);
+  for(const inset of [12,40,70,96]){
+    const top=inset/2;
+    rect(inset,top,2,208-top*2,'#554761');
+    rect(318-inset,top,2,208-top*2,'#554761');
+  }
+  for(const row of [149,164,187])rect(0,row,320,1,'#524055');
+  const aura=attack>7?'#efa8a5':boss?'#9c487a':'#657999';
+  const width=boss?65:42;
+  polygon(aura,[[160-width,146],[160-width-17,106],[140,118],[160,65],[180,118],[160+width+17,106],[160+width,146],[160,162]]);
+  polygon('#322139',[[126,96],[145,105],[175,105],[194,96],[186,138],[160,154],[134,138]]);
+  rect(140,117,13,4,'#ffe39b');rect(167,117,13,4,'#ffe39b');
+  if(boss){
+    polygon('#d6ac6f',[[136,98],[132,77],[149,91],[160,75],[171,91],[188,77],[184,98]]);
+    rect(153,139,14,5,'#cb6a9c');
+  }
+}
+const movementInterval=1000/60;
+let lastFrame=null, elapsed=0;
+const pointers=new Map();
+function clearMovement(){
+  keys={};
+  pointers.clear();
+}
+function step(){
+  if(attack)attack--;
+  if(!done&&hp>0&&!foe&&!shrineOpen){
+    if(destination!==null){
+      move(Math.sign(destination.x-x)*Math.min(3,Math.abs(destination.x-x)),Math.sign(destination.y-y)*Math.min(3,Math.abs(destination.y-y)));
+      if(x===destination.x&&y===destination.y)destination=null;
+    }
+    const held=new Set(pointers.values());
+    const pressed=key=>Number(Boolean(keys[key])||held.has(key));
+    move(2*(pressed('right')-pressed('left')),2*(pressed('down')-pressed('up')));
+    for(const n of npcs){
+      if(n.used||!near(n,104,14))continue;
+      n.used=true;
+      if(n.n==='タク'&&Math.random()<.5)say('タクは旅に出た。別の力を探そう！');
+      else{party.push(n.n);say(n.n+'が仲間になった！')}
+      saveProgress(false);
+    }
+    gems.forEach((item,i)=>{
+      if(!item.on||!near(item,gemLane(i),11))return;
+      item.on=false;art++;say('星のアーティファクトを発見！');saveProgress(false);
+    });
+    const index=chapterOf(x);
+    const shrine=shrines[index];
+    const nearby=enemies.find(e=>e.chapter===index&&e.h>0&&near(e,e.row,13));
+    if(!shrine.solved&&near(shrine,shrine.row,10))openShrine(shrine,index);
+    else if(nearby)startBattle(nearby);
+  }
+}
+function loop(timestamp){
+  if(lastFrame!==null)elapsed+=Math.min(timestamp-lastFrame,50);
+  lastFrame=timestamp;
+  while(elapsed>=movementInterval){
+    step();
+    elapsed-=movementInterval;
+  }
+  stage=chapterOf(x);
+  if(shownChapter!==stage){
+    $('chapter-note').textContent=chapterNotes[stage];
+    shownChapter=stage;
+  }
+  if(foe)drawBattle();else drawField();
+  $('hud').textContent='第'+(stage+1)+'章 '+chapterInfo[stage][0]+'　HP '+hp+'/'+hpMax()+'　Lv.'+lv+'　✦ '+art;
+  $('party').textContent='仲間：'+(party.join(' / ')||'なし');
+  requestAnimationFrame(loop);
+}
+document.querySelectorAll('[data-k]').forEach(button=>{
+  const key=button.dataset.k;
+  button.onpointerdown=event=>{
+    if(event.button!==0||foe||done||shrineOpen)return;
+    destination=null;
+    button.setPointerCapture(event.pointerId);
+    pointers.set(event.pointerId,key);
+  };
+  button.onpointerup=button.onpointercancel=button.onlostpointercapture=event=>pointers.delete(event.pointerId);
+  button.onclick=event=>{
+    if(foe||done||shrineOpen)return;
+    destination=null;
+    move(key==='right'?8:key==='left'?-8:0,key==='down'?8:key==='up'?-8:0);
+  };
+});
+const map={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'};
+window.addEventListener('keydown',event=>{
+  if(!map[event.key]||foe||done||shrineOpen)return;
+  event.preventDefault(); destination=null; keys[map[event.key]]=true;
+});
+window.addEventListener('keyup',event=>{if(map[event.key])keys[map[event.key]]=false});
+window.addEventListener('blur',clearMovement);
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden)return;
+  clearMovement();
+  lastFrame=null;
+  elapsed=0;
+});
+$('next').onclick=()=>{
+  if(foe||done||shrineOpen||hp<=0)return;
+  const index=chapterOf(x), shrine=shrines[index], edge=enemies[index*8+7];
+  const rowPoint=item=>({x:item.x,y:item.row});
+  const points=[
+    ...npcs.filter(n=>!n.used).map(n=>({x:n.x,y:104})),
+    ...gems.filter(gem=>gem.on).map(rowPoint),
+    ...enemies.filter(enemy=>enemy.chapter===index&&enemy.h>0&&!enemy.optional&&(!enemy.guardian||shrine.solved)).map(rowPoint),
+    ...(!shrine.solved?[rowPoint(shrine)]:[])
+  ].filter(point=>point.x>x+1||(Math.abs(point.x-x)<=1&&Math.abs(point.y-y)>8))
+   .sort((a,b)=>a.x-b.x);
+  const ready=points.find(point=>point.x<=(index+1)*span&&(shrine.solved||point.x<=shrine.x));
+  destination=ready??(!shrine.solved?rowPoint(shrine):edge.h>0?rowPoint(edge):
+    {x:camps[Math.min(last,index+1)].x,y:104});
+};
+function saveProgress(explicit){
+  try{
+    localStorage.setItem('kazumi',JSON.stringify({version:2,x,y,hp,xp,lv,party,art,usedNpcs:npcs.map(n=>Boolean(n.used)),gems:gems.map(gem=>gem.on),enemies:enemies.map(enemy=>enemy.h),shrines:shrines.map(shrine=>shrine.solved),done}));
+    if(explicit)say('このブラウザに冒険を保存した！');
+  }catch(error){if(explicit)say('このブラウザでは保存できません。')}
+}
+$('save').onclick=()=>saveProgress(true);
+$('reset').onclick=()=>{
+  if(confirm('このブラウザの冒険を消して、最初から遊びますか？')){
+    try{localStorage.removeItem('kazumi')}catch(error){}
+    location.reload();
+  }
+};
+try{
+  const saved=JSON.parse(localStorage.getItem('kazumi'));
+  if(saved?.version===2){
+    ({x,y,hp,xp,lv,party,art,done}=saved);
+    npcs.forEach((n,i)=>n.used=saved.usedNpcs[i]);
+    gems.forEach((gem,i)=>gem.on=saved.gems[i]);
+    enemies.forEach((enemy,i)=>enemy.h=saved.enemies[i]);
+    shrines.forEach((shrine,i)=>shrine.solved=saved.shrines[i]);
+    if(done){$('walk').hidden=true;$('next').disabled=true;say('一美の冒険をクリア済み！')}
+    else{hp=Math.max(1,hp);say('冒険を再開！')}
+  }else if(saved&&Array.isArray(saved.party)){
+    party=saved.party;art=saved.art||0;xp=saved.xp||0;lv=1+Math.floor(xp/80);hp=hpMax();
+    npcs.forEach(n=>n.used=party.includes(n.n)||Boolean(saved.npcs?.find(old=>old.n===n.n)?.used));
+    say('長編の旅が始まった。前の冒険の仲間と宝石を引き継いだよ。');
+  }
+}catch(error){}
+requestAnimationFrame(loop);
+</script></html>
