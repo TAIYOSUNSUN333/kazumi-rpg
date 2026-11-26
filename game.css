@@ -83,7 +83,7 @@ button:disabled { opacity: .55; }
   #mobility { bottom:calc(max(64px,calc(env(safe-area-inset-bottom) + 57px)) + clamp(84px,28vw,116px) + 7px); }
   #portrait { display: block; top: auto; bottom: max(61px, calc(env(safe-area-inset-bottom) + 54px)); left: 50%; right: auto; transform: translateX(-50%); max-width: 34%; text-align: center; pointer-events: none; }
   canvas { position: absolute; top: 21%; height: 47%; }
-  #message { bottom: max(211px, calc(env(safe-area-inset-bottom) + 203px)); left: 8px; right: 8px; }
+  #message { top: 30%; bottom: auto; left: 8px; right: 8px; }
   #panel { max-height: 71%; }
 }
 @media (orientation: portrait) and (max-width: 420px) {

@@ -1241,6 +1241,7 @@ function updateUI() {
   $('joystick').hidden = !playing;
   $('joystick').setAttribute('aria-disabled',String(!movementAllowed()));
   $('guard').hidden = !battle;
+  $('dodge').hidden = !playing;
   const action = townActionLabel();
   $('interact').hidden = !action;
   if (action && $('interact').textContent !== action) $('interact').textContent = action;
