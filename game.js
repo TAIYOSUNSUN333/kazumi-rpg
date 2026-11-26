@@ -48,6 +48,7 @@ let fieldSafeUntil = 0;
 let flashUntil = 0;
 let levelUntil = 0;
 let burstUntil = 0;
+let victoryUntil = 0;
 let messageUntil = 0;
 const numbers = [];
 const level = () => 1 + Math.floor(Math.sqrt(player.xp / 25));
@@ -57,7 +58,7 @@ const maxMP = () => 30 + (level() - 1) * 4;
 const attackPower = () => 10 + (level() - 1) * 3 + equipped('weapon').bonus + (player.party.includes('一郎') ? 2 : 0);
 const defense = () => 5 + (level() - 1) * 2 + equipped('armor').bonus + (player.party.includes('クルミ') ? 1 : 0);
 function equipped(type) {
-  return trials[trialGear[type]]?.reward || equipment[type][player[type]];
+  return prefectures[regionalGear[type]]?.[type] || trials[trialGear[type]]?.reward || equipment[type][player[type]];
 }
 const activeEnemies = chapter => enemies.slice(chapter * 8, chapter * 8 + 8);
 const unlocked = enemy => !enemy.boss || (shrines[enemy.chapter].solved &&
@@ -69,7 +70,7 @@ audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true)
 function save(explicit = false) {
   if (trialVitals) return false;
   const success = storage.write(saveKey, {
-    version: 8, town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 9, tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
@@ -84,9 +85,9 @@ function save(explicit = false) {
 
 function load(data) {
   if (!data || typeof data !== 'object') return;
-  const current = [4, 5, 6, 7, 8].includes(data.version);
-  ring = [5, 6, 7, 8].includes(data.version) && data.ring === true;
-  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8].includes(data.version) && data.pots?.[i] === true; });
+  const current = [4, 5, 6, 7, 8, 9].includes(data.version);
+  ring = [5, 6, 7, 8, 9].includes(data.version) && data.ring === true;
+  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8, 9].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
   player.xp = numeric(data.xp, 0, 0, 1000000);
@@ -118,7 +119,7 @@ function load(data) {
   enemies.forEach((enemy, i) => {
     const hp = data.enemies?.[i];
     // Old saves used different HP scales. Preserve kills and the fraction remaining.
-    const oldMax = enemy.boss ? (enemy.chapter === last ? 490 : 120 + enemy.chapter * 21) :
+    const oldMax = enemy.boss ? (enemy.chapter === originalFinal ? 490 : 120 + enemy.chapter * 21) :
       (enemy.chapter === 0 ? 30 + enemy.slot * 7 : 70 + enemy.chapter * 12 + enemy.slot * 5);
     if (oldMap && Number.isFinite(hp)) enemy.hp = clamp(Math.ceil(hp / oldMax * enemy.max), 0, enemy.max);
     if (current) enemy.hp = numeric(hp, enemy.max, 0, enemy.max);
@@ -128,7 +129,7 @@ function load(data) {
     }
   });
   joined = current && data.joined === true;
-  returning = current && joined && data.returning === true;
+  returning = data.version === 9 && joined && data.returning === true;
   done = current && returning && data.done === true;
   specialAt = modern ? numeric(Math.ceil(data.special), 0, 0, 15) : 0;
   if (current) {
@@ -150,6 +151,13 @@ function load(data) {
     }
   }
   loadTowns(data.town);
+  loadTourism(data.tourism);
+  if (data.version !== 9) {
+    for (let chapter = 0; chapter <= Math.min(originalFinal, checkpoint); chapter++) tourismFor(chapter).visited = true;
+    if (current && data.done && activeEnemies(originalFinal).at(-1).hp === 0) {
+      tourismFor(originalFinal).visited = true;
+    }
+  }
 }
 
 function say(text, duration = 4) {
@@ -226,9 +234,9 @@ document.addEventListener('pointerdown', () => audio.unlock(), {once: true, capt
 document.addEventListener('keydown', () => audio.unlock(), {once: true, capture: true});
 
 function fieldTrack() {
-  if (interior) return 'town' + interior.site.chapter;
+  if (interior) return interior.site.kind === 'regional' ? 'dungeon' : 'town' + interior.site.chapter;
   const chapter = chapterOf(player.x);
-  if (player.x - chapter * span >= 0 && player.x - chapter * span < 193) return 'town' + chapter;
+  if (player.x - chapter * span >= 0 && player.x - chapter * span < 355) return 'town' + chapter;
   return [1, 3, 6, 9, 11].includes(chapter) ? 'dungeon' : 'field';
 }
 
@@ -242,6 +250,7 @@ function panel(title, lines, buttons) {
     p.textContent = line;
     return p;
   }));
+  decoratePanel(title);
   $('panel-buttons').replaceChildren(...buttons.map(([label, callback, disabled]) => {
     const button = document.createElement('button');
     button.textContent = label;
@@ -309,7 +318,7 @@ function showTitle() {
     }
   }]);
   panel('一美のスター街道', [
-    '愛猫ソソをさらわれた一美は、十二の土地を越えてソソを探しに行く。',
+    '愛猫ソソをさらわれた一美は、やがて47都道府県を巡る旅に出る。',
     '十字キーで移動。剣で敵を倒すか、接触して戦闘へ。キーボードは矢印キー、Spaceで攻撃、Shiftで回避、Zでジャンプ、Cで魔法、Xで必殺技、Eで街の人や出口を調べる。'
   ], actions);
 }
@@ -324,6 +333,7 @@ function settings() {
   const label = document.createElement('label');
   label.append('音量 ', volume);
   $('panel-body').append(label);
+  graphicsSettings();
 }
 function updateAudio(volume, muted) {
   audio.setVolume(volume, muted);
@@ -347,6 +357,8 @@ function openMenu() {
   else if (interior) actions.push(['保存', () => { save(true); resume(); }], ['施設の案内', servicePanel,
     Math.hypot(interior.x - 320, interior.y - 100) > 66]);
   else actions.push(
+    ['全国手帳', travelBook],
+    ['観光案内', tourPanel, !nearScenicSpot()],
     ['保存', () => { save(true); resume(); }],
     ['装備', shop],
     ['四天王の試練', openTrials, !joined],
@@ -387,6 +399,7 @@ function shop() {
       player.gold -= item.cost;
       player[type]++;
       trialGear[type] = null;
+      regionalGear[type] = null;
       save();
       shop();
     }, player.gold < item.cost]);
@@ -400,11 +413,11 @@ function shop() {
   for (const index of clearedTrials) {
     const trial = trials[index];
     const type = trial.armor ? 'armor' : 'weapon';
-    offers.push([trial.reward.name + 'を装備', () => { trialGear[type] = index; save(); shop(); }, trialGear[type] === index]);
+    offers.push([trial.reward.name + 'を装備', () => { trialGear[type] = index; regionalGear[type] = null; save(); shop(); }, trialGear[type] === index]);
   }
   for (const type of ['weapon', 'armor']) {
-    if (trialGear[type] !== null) offers.push([equipment[type][player[type]].name + 'に戻す', () => {
-      trialGear[type] = null; save(); shop();
+    if (trialGear[type] !== null || regionalGear[type] !== null) offers.push([equipment[type][player[type]].name + 'に戻す', () => {
+      trialGear[type] = null; regionalGear[type] = null; save(); shop();
     }]);
   }
   panel('装備を整える', [
@@ -607,7 +620,7 @@ function castMagic() {
     return;
   }
   const target = activeEnemies(chapterOf(player.x)).filter(enemy => enemy.hp && unlocked(enemy) &&
-    !(enemy.rank === 'major' && enemy.chapter === last) && aligned(enemy.x, enemy.y, starterRing.reach, 16))
+    !isFinalBoss(enemy) && aligned(enemy.x, enemy.y, starterRing.reach, 16))
     .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0];
   if (target) hurtEnemy(target, damage);
   strikePots(starterRing.reach, 12);
@@ -641,7 +654,7 @@ function swing() {
   }
   const chapter = chapterOf(player.x);
   for (const enemy of activeEnemies(chapter)) {
-    if (!enemy.hp || !unlocked(enemy) || enemy.rank === 'major' && enemy.chapter === last) continue;
+    if (!enemy.hp || !unlocked(enemy) || isFinalBoss(enemy)) continue;
     if (aligned(enemy.x, enemy.y, reach, 13)) hurtEnemy(enemy, power);
     if (paused) break;
   }
@@ -659,9 +672,10 @@ function dodge() {
 function special() {
   if (clock < specialAt || player.mp < 10) return;
   const targets = battle ? [battle.enemy] : activeEnemies(chapterOf(player.x)).filter(enemy =>
-    enemy.hp && unlocked(enemy) && !(enemy.rank === 'major' && enemy.chapter === last) && Math.hypot(player.x - enemy.x, player.y - enemy.y) <= 105);
+    enemy.hp && unlocked(enemy) && !isFinalBoss(enemy) && Math.hypot(player.x - enemy.x, player.y - enemy.y) <= 105);
   if (!targets.length) return say('近くに敵がいない。');
   const inBattle = Boolean(battle);
+  if (inBattle) startCinema('impact');
   player.mp -= 10;
   specialAt = clock + 15;
   burstUntil = clock + .55;
@@ -688,7 +702,7 @@ function addNumber(text, x, y, color, field = false) {
   numbers.push({text: String(text), x, y, color, field, expires: clock + .7});
 }
 function hurtEnemy(enemy, damage) {
-  if (enemy.rank === 'major' && enemy.chapter === last) {
+  if (isFinalBoss(enemy)) {
     const boundary = Math.ceil(enemy.max * (3 - finalPhase(enemy)) / 3);
     enemy.hp = Math.max(boundary, enemy.hp - damage);
     if (boundary && enemy.hp === boundary && battle) {
@@ -697,13 +711,26 @@ function hurtEnemy(enemy, damage) {
       battle.next = clock + 1.15;
       burstUntil = clock + .55;
       audio.play('encounter');
-      say('ヴィットリオが変身した。第' + finalPhase(enemy) + '形態！', 3);
+      say(enemy.name + 'が変身した。第' + finalPhase(enemy) + '形態！', 3);
     }
   } else enemy.hp = Math.max(0, enemy.hp - damage);
   enemy.flash = clock + .16;
   if (battle) addNumber(damage, battle.enemyX, 174, '#fff29a');
   else addNumber(damage, enemy.x, enemy.y - 14, '#fff29a', true);
   if (enemy.hp) return;
+  monsterDex.add(enemy.name);
+  victoryUntil = clock + 1.1;
+  if (enemy.hiddenRegion !== undefined) {
+    const entry = tourismFor(enemy.hiddenRegion);
+    entry.boss = true;
+    awardCompanion(40);
+    leaveTrial();
+    player.gold = Math.min(bankLimit, player.gold + 48 + enemy.hiddenRegion * 4);
+    save();
+    audio.play('victory');
+    panel('隠しボスを討伐', [enemy.name + 'を討伐し、図鑑に登録した。'], [['街道に戻る', resume]]);
+    return;
+  }
   if (enemy.trial !== undefined) {
     awardCompanion(60);
     clearedTrials.add(enemy.trial);
@@ -752,10 +779,16 @@ function hurtEnemy(enemy, damage) {
       'ソソは戦闘中に自分で攻撃し、時間が経つと覚醒する。必殺技で二人の力を合わせよう。'
     ], [['一緒に行こう', resume]]);
   }
+  if (enemy.rank === 'major' && enemy.chapter === originalFinal) {
+    panel('若草山から続く道', [
+      'ヴィットリオが倒れ、空の亀裂が閉じた。だが、まだ遠い土地では地脈が眠ったままだ。',
+      '一美とソソは、各地の旅人と出会いながら、残る道を結び直すことにした。'
+    ], [['旅を続ける', resume]]);
+  }
   if (enemy.rank === 'major' && enemy.chapter === last) {
     returning = true;
     panel('世界に朝が戻った', [
-      'ヴィットリオが倒れ、空の亀裂が閉じた。ソソは大きな光をほどき、いつもの小さな猫に戻った。',
+      '首里の石垣を渡る朝風が、各地で出会った声とともに戻った。ソソはいつもの小さな猫に戻った。',
       '「世界を救ったんだね、私たち」返事の代わりに、ソソは一美の靴ひもにじゃれた。'
     ], [['自宅へ向かう', () => { guide(); resume(); }], ['歩いて帰る', resume]]);
   }
@@ -800,6 +833,7 @@ function defeat(title, detail = '呼びかけても返事はなく、足もと�
 }
 
 function encounter(enemy, ambush) {
+  battleCinema = null;
   destination = null;
   clearInput();
   resetCat();
@@ -861,7 +895,10 @@ function updateCat(dt) {
     battle.catEffect = {until: clock + 1.1, type: 'awakening'};
     audio.play('awake' + cat.form);
     say('ソソが第' + (cat.form + 1) + '形態・' + next.name + 'に覚醒！', 3);
-    if (cat.form === 5) audio.setTrack('genesis');
+    if (cat.form === 5) {
+      audio.setTrack('genesis');
+      startCinema('awakening');
+    }
   }
   if (battle.burn && clock >= battle.burn.at) {
     const damage = battle.burn.damage;
@@ -967,10 +1004,10 @@ function updateBattle(dt) {
   const distance = member?.hp > 0 && Math.abs(allyDistance) + 8 < Math.abs(heroDistance) ? allyDistance : heroDistance;
   const direction = Math.sign(distance) || -1;
   const enraged = enemy.boss && enemy.hp <= enemy.max / 2;
-  const final = enemy.rank === 'major' && enemy.chapter === last;
+  const final = isFinalBoss(enemy);
   const phase = final ? finalPhase(enemy) : 1;
   const sequence = enemy.pattern || (final ? [['bite', 'slow'], ['rush', 'wave'], ['wave', 'rush', 'wave']][phase - 1] :
-    enemy.rank === 'mid' ? ['slow', 'bite'] : bossPatterns[enemy.chapter]);
+    enemy.rank === 'mid' ? ['slow', 'bite'] : bossPatterns[enemy.chapter % bossPatterns.length]);
   const pattern = enemy.boss ? sequence[battle.pattern % sequence.length] : 'bite';
   const move = attackPatterns[pattern];
   const wave = pattern === 'wave' && (phase === 3 || enemy.trial !== undefined);
@@ -994,6 +1031,7 @@ const closeTo = (x, y, radius) => Math.hypot(player.x - x, player.y - y) < radiu
 
 function updateField(dt) {
   followCompanion(dt);
+  noteVisit(chapterOf(player.x));
   if (checkTownDoor()) return;
   const chapter = chapterOf(player.x);
   if (joined) {
@@ -1105,14 +1143,14 @@ function updateUI() {
   $('interact').textContent = action;
   $('actions').hidden = Boolean(interior) || mode === 'title' || mode === 'home';
   $('town-clock').hidden = mode !== 'field' || Boolean(battle);
-  $('town-clock').textContent = (interior || player.x - chapter * span < 193 ? towns[chapter].name + '　' : '') + townTime();
-  $('location').textContent = interior ? townTypes[interior.site.kind][0] : trialVitals ? '四天王の闘技場' : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
+  $('town-clock').textContent = (interior || player.x - chapter * span < 355 ? towns[chapter].name + '　' : '') + townTime();
+  $('location').textContent = interior ? townTypes[interior.site.kind][0] : trialVitals ? (battle?.enemy.hiddenRegion !== undefined ? '隠しダンジョン' : '四天王の闘技場') : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
   $('vitals').textContent = 'Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP();
   $('progress').textContent = '経験値 ' + player.xp + '/' + nextXp() + '（あと' + (nextXp() - player.xp) + '）　' + player.gold + 'G　攻' + attackPower() + ' / 防' + defense();
   $('enemy-status').hidden = !battle;
   if (battle) {
     $('enemy-status').textContent = battle.enemy.name + '　HP ' + battle.enemy.hp + '/' + battle.enemy.max +
-      (battle.enemy.rank === 'major' && battle.enemy.chapter === last ? '　第' + finalPhase(battle.enemy) + '形態' : '') +
+      (isFinalBoss(battle.enemy) ? '　第' + finalPhase(battle.enemy) + '形態' : '') +
       (battle.strike ? '　⚠ ' + battle.strike.label : '');
   }
   const member = currentCompanion();

@@ -16,6 +16,7 @@ const townTypes = {
   casino: ['カジノ', '遊技係', 18, 5, '#9a526a', '遊'],
   ruin: ['廃墟', '遺跡の番人', 6, 20, '#777687', '跡'],
   hall: ['役所', '受付係', 8, 17, '#908d65', '役'],
+  regional: ['隠しダンジョン', '守り石', 0, 24, '#666791', '洞'],
   secret: ['地下の宝庫', '記録係', 0, 24, '#636985', '鍵']
 };
 
@@ -32,17 +33,25 @@ const towns = [
   ['星図台の街', '石積み', '星図紙', '星形の焼き菓子', 'ルチア', ['library','bank','smith','home']],
   ['朝雲の集落', '杭上げ', '雲豆', '雲豆の煮込み', 'ナギ', ['weapon','church','food','store']],
   ['終鐘の門前町', 'レンガ', '鐘銀', '鐘銀通りの包み焼き', 'ヴィオラ', ['tavern','inn','hall','ruin']]
-].map(([name, style, product, meal, resident, services], chapter) => {
+].concat(prefectures.slice(12).map((region, index) => [
+  region.town, {forest:'木組み',coast:'白壁',mountain:'石積み',water:'杭上げ',sand:'土壁',snow:'急勾配',river:'レンガ'}[region.terrain],
+  region.specialty, region.dish, region.companion + 'の親戚',
+  [['inn','food','bath','items'], ['tavern','inn','food','bank'], ['bath','food','inn','smith']][index % 3]
+])).map(([name, style, product, meal, resident, services], chapter) => {
   const base = chapter * span;
-  const kinds = [...services, 'secret'];
+  const extra = ['inn','food','bath'].filter(kind => !services.includes(kind));
+  const kinds = [...services, ...extra, 'secret'];
   const sites = kinds.map((kind, i) => ({
-    id: chapter + '-' + kind, chapter, kind, x: base + (kind === 'secret' ? 188 : [55,100,156,42,121][i]),
+    id: chapter + '-' + kind, chapter, kind, x: base + (kind === 'secret' ? 188 : i < services.length ? [55,100,156,42,121][i] : 235 + (i - services.length) * 47),
     row: i < 3 ? 56 : 153, upper: i < 3, ...(kind === 'secret' ? {seal:{solved:false}} : {})
   }));
   return {name, style, product, meal, resident, chapter, sites};
 });
 
 const townSites = new Map(towns.flatMap(town => town.sites.map(site => [site.id, site])));
+for (const [id] of prefectures.entries()) {
+  townSites.set('regional-' + id, {id:'regional-' + id, chapter:id, kind:'regional', x:id * span + 335, row:126});
+}
 const bankLimit = 99999999999;
 let townSeconds = 9 * 150;
 let townBank = 0;
@@ -128,6 +137,18 @@ function buildingBlocks(x, y) {
 }
 
 function roomFurniture(kind) {
+  if (kind === 'regional') {
+    const terrain = prefectures[interior.site.chapter].terrain;
+    return ({
+      forest: [{x:103,y:141,w:112,h:42},{x:429,y:175,w:80,h:51}],
+      coast: [{x:90,y:110,w:131,h:59},{x:402,y:164,w:132,h:31}],
+      mountain: [{x:140,y:127,w:90,h:63},{x:451,y:119,w:68,h:78}],
+      water: [{x:92,y:194,w:135,h:35},{x:411,y:132,w:115,h:60}],
+      sand: [{x:105,y:107,w:103,h:85},{x:397,y:181,w:121,h:40}],
+      snow: [{x:124,y:165,w:107,h:51},{x:424,y:120,w:97,h:75}],
+      river: [{x:88,y:136,w:140,h:46},{x:400,y:182,w:143,h:43}]
+    })[terrain];
+  }
   const right = ['home','inn','bath','food','tavern','casino'].includes(kind);
   return [{x:100, y:119, w:112, h:39}, {x: right ? 426 : 455, y:174, w: right ? 99 : 67, h:44}];
 }
@@ -221,6 +242,7 @@ function townInteraction() {
     } else if (Math.hypot(interior.x - 320, interior.y - 100) <= 66) servicePanel();
     return;
   }
+  if (nearScenicSpot()) return tourPanel();
   const town = towns[chapterOf(player.x)];
   const resident = townResident(town);
   if (closeTo(resident.x, resident.y, 23)) residentTalk(town);
@@ -238,6 +260,7 @@ function townActionLabel() {
     if (Math.hypot(interior.x - 320, interior.y - 100) <= 66) return '話す';
     return '';
   }
+  if (nearScenicSpot()) return '観光案内';
   const town = towns[chapterOf(player.x)];
   const resident = townResident(town);
   if (closeTo(resident.x, resident.y, 23)) return '住民と話す';
@@ -291,6 +314,7 @@ function shareTownEvent(site) {
 function servicePanel(note = '') {
   if (!interior) return;
   const {site} = interior;
+  if (site.kind === 'regional') return dungeonPanel();
   const town = towns[site.chapter];
   const [name, keeper] = townTypes[site.kind];
   const services = [['室内を歩く', resume]];
@@ -309,7 +333,7 @@ function servicePanel(note = '') {
       const step = player[type] + 1;
       const item = equipment[type][step];
       lines.push('品揃え　' + equipment[type].map(entry => entry.name).join('、'));
-      if (item) buy(item.name + 'を装備', item.cost, () => { player[type] = step; trialGear[type] = null; });
+      if (item) buy(item.name + 'を装備', item.cost, () => { player[type] = step; trialGear[type] = null; regionalGear[type] = null; });
       else lines.push('現在の装備より上位の品は売り切れです。');
       break;
     }
@@ -320,22 +344,32 @@ function servicePanel(note = '') {
       if (site.kind === 'store') buy('特製弁当を食べる（HP +28）', 13, () => heal(28));
       break;
     case 'inn':
-      buy('宿泊して翌朝へ（HP・MP全快）', 12, () => {
+      services.push(['宿泊して翌朝へ（HP・MP全快）　12G', () => {
+        let conversation = '';
+        trade(12, () => {
         const nextMorning = townDay() * 3600 + 6 * 150;
         tickTown(nextMorning > townSeconds ? nextMorning - townSeconds : nextMorning + 3600 - townSeconds);
         player.hp = maxHP(); player.mp = maxMP();
         const companion = currentCompanion();
         if (companion) { companion.hp = companionHP(companion); companion.mp = companionMP(companion); }
-      });
+        conversation = regionalInnTalk(site.chapter);
+        }, () => servicePanel(conversation));
+      }, player.gold < 12]);
       break;
     case 'food':
-      lines.push('名物は' + town.meal + '。');
-      buy(town.meal + 'を食べる（HP +32）', 10 + site.chapter, () => heal(32));
+      const local = prefectures[site.chapter];
+      lines.push('名物は' + local.dish + '。');
+      buy(local.dish + 'を食べる（HP +32）', 10 + site.chapter, () => {
+        heal(32);
+        tourismFor(site.chapter).dish = true;
+      });
+      if (town.meal !== local.dish) buy(town.meal + 'を食べる（HP +32）', 10 + site.chapter, () => heal(32));
       buy(town.product + 'の旅用弁当（薬草つき）', 15 + site.chapter, () => { heal(26); player.herbs++; });
       break;
     case 'bath':
       buy('入浴する（HP +24・MP +8）', 8, () => {
         heal(24); player.mp = Math.min(maxMP(), player.mp + 8);
+        rememberRegionalBath(site.chapter);
       });
       break;
     case 'tavern':

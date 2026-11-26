@@ -32,122 +32,96 @@ function label(text, x, y, color = '#fff1df', size = 13) {
   ctx.fillStyle = color;
   ctx.fillText(text, x, y);
 }
-function hero(x, y, scale, face) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale * (face < 0 ? -1 : 1), scale);
-  const blink = clock < flashUntil && !reducedMotion.matches;
-  rect(-11, 1, 22, 4, '#252236');
-  const armorColors = ['#cd6494', '#ae7869', '#86a9b9', '#a188cc'];
-  rect(-8, -20, 16, 15, blink ? '#fbd0d2' : trialGear.armor !== null ? '#745b9f' : armorColors[player.armor]);
-  rect(-8, -12, 16, 2, '#efc08f');
-  rect(8, -13, 3, 13, player.weapon || trialGear.weapon !== null ? '#d7e8e8' : '#a98062');
-  rect(-9, -32, 17, 13, '#472c49');
-  rect(-5, -29, 12, 11, '#f4ccac');
-  rect(3, -26, 2, 3, '#492f45');
-  rect(-10, -19, 5, 9, '#e897b4');
-  rect(-7, -5, 5, 8, '#63394b');
-  rect(3, -5, 5, 8, '#63394b');
-  ctx.restore();
+function groundShadow(x, y, width, height) {
+  ctx.fillStyle = '#17132176';
+  ctx.beginPath();
+  ctx.ellipse(x, y, width, height, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
-function drawCompanion(name, x, y, scale, face, motion = 0, hit = false) {
-  const profile = companionProfiles[name];
-  if (!profile) return hero(x, y, scale, face);
+
+function drawActor(name, x, y, scale, face, pose) {
+  const sheet = picture('actors');
+  groundShadow(x, y + 1, 11 * scale, 3 * scale);
+  if (!sheet) return;
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(scale * (face < 0 ? -1 : 1), scale);
-  rect(-12, 1, 24, 4, '#2a2635');
-  if (name === 'クルミ') {
-    polygon([[-12,-4],[-16,-20],[-10,-29],[-6,-21],[5,-21],[10,-29],[15,-17],[12,-4]], profile.hair);
-    rect(-10, -17, 23, 14, profile.color);
-    rect(-5, -19, 14, 9, profile.skin);
-    rect(-3, -17, 3, 4, '#352541');
-    rect(5, -17, 3, 4, '#352541');
-    diamond(3, -11, 3, 2, '#ffbb74');
-  } else {
-    const w = profile.width;
-    rect(-w, -21, w * 2, 16, hit ? '#ffbab1' : profile.color);
-    rect(-w + 2, -10, w * 2 - 4, 3, '#e9c18c');
-    rect(-9, -33, 18, name === '恵美ちゃん' ? 22 : 14, profile.hair);
-    rect(-5, -28, 12, 10, profile.skin);
-    rect(3, -26, 2, 3, '#312642');
-    rect(-7, -5, 5, 8 - motion, '#45415a');
-    rect(3, -5, 5, 8 + motion, '#45415a');
-    if (name === '一郎') rect(7, -20, 4, 15, '#dab988');
-    if (name === 'タク') diamond(-8, -28, 4, 5, '#91c37e');
-    if (name === '恵美ちゃん') rect(-10, -32, 18, 3, '#accbda');
-  }
+  ctx.scale((face < 0 ? -1 : 1) * scale, scale);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sheet, pose * 64, actorRow(name) * 64, 64, 64, -30, -54, 60, 58);
   ctx.restore();
 }
 
-function drawCat(x, y, scale, formIndex = 0) {
-  const form = awakening[formIndex];
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  if (formIndex) {
-    for (let i = 0; i < formIndex + 1; i++) {
-      const angle = Math.PI * 2 * i / (formIndex + 1);
-      diamond(Math.cos(angle) * 20, Math.sin(angle) * 15 - 7, 2 + formIndex / 2, 4, form.color);
+function hero(x, y, scale, face) {
+  const moving = Boolean(destination) || ['left','right','up','down'].some(pressed);
+  const pose = !player.hp ? 8 : clock < flashUntil ? 5 : clock < swingUntil ? 3 :
+    glow && clock < glow.until ? 6 : jumpHeight > 2 ? 2 :
+    battle && clock < invulnerableUntil ? 4 : clock < victoryUntil ? 7 :
+    moving ? 1 + Math.floor(clock * 10) % 2 : 0;
+  drawActor('一美', x, y, scale, face, pose);
+  if (player.armor || regionalGear.armor !== null || trialGear.armor !== null) {
+    const metal = regionalGear.armor !== null ? prefectures[regionalGear.armor].color :
+      ['#817967','#b39571','#8eb2b9','#beadd1'][player.armor];
+    const direction = face < 0 ? -1 : 1;
+    if (pose !== 8) {
+      polygon([[x - direction * 5 * scale,y - 30 * scale],[x + direction * 4 * scale,y - 33 * scale],
+        [x + direction * 6 * scale,y - 27 * scale],[x - direction * 5 * scale,y - 26 * scale]], metal);
+      diamond(x + 1, y - 28 * scale, 2, 2, '#f9e1b8');
     }
   }
-  polygon([[-14, -6], [-20, -15], [-16, -19], [-9, -10]], form.color);
-  rect(-12, -12, 22, 13, form.color);
-  if (formIndex >= 2) {
-    polygon([[-5,-7],[-25,-25],[-20,-8],[-8,2]], form.color);
-  }
-  if (formIndex >= 4) {
-    polygon([[1,-18],[3,-32],[7,-25],[11,-34],[12,-18]], form.color);
-  }
-  if (formIndex === 5) {
-    ctx.strokeStyle = form.color;
-    ctx.beginPath();
-    ctx.ellipse(3, -33, 15, 4, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  polygon([[-5, -12], [-4, -23], [1, -17], [8, -17], [12, -23], [13, -8]], form.color);
-  rect(1, -13, 2, 3, '#402d4b');
-  rect(8, -13, 2, 3, '#402d4b');
-  rect(5, -8, 3, 2, '#a95776');
+}
+
+function drawCompanion(name, x, y, scale, face, motion = 0, hit = false) {
+  const member = currentCompanion();
+  const active = battle && member?.name === name && Math.abs(x - battle.allyX) < 14;
+  const action = active && battle.allyAction?.until > clock ? battle.allyAction.kind : '';
+  const pose = active && !member.hp ? 8 : hit ? 5 : active && battle.allyGuard > clock ? 4 :
+    action === 'magic' || action === 'heal' ? 6 : action === 'attack' ? 3 :
+    active && battle.allyDodge > clock ? 2 : motion !== 0 ? 1 + Math.floor(clock * 9) % 2 : 0;
+  drawActor(name, x, y, scale, face, pose);
+}
+
+function drawCat(x, y, scale, formIndex = 0) {
+  const sheet = picture('soso');
+  const active = battle?.catEffect?.until > clock;
+  const frame = battle && !cat.hp ? 3 : active ? 1 :
+    reducedMotion.matches ? 0 : Math.floor(clock * 7) % 3;
+  groundShadow(x, y + 2, 10 * scale, 3 * scale);
+  if (formIndex) lightAt(ctx, x, y - 13, (21 + formIndex * 5) * scale, awakening[formIndex].color + '55');
+  if (!sheet) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sheet, frame * 64, formIndex * 64, 64, 64, x - 25 * scale, y - 40 * scale, 50 * scale, 50 * scale);
   ctx.restore();
 }
 
 function monster(enemy, x, y, scale) {
+  const variant = enemy.variant ?? enemy.trial ?? 0;
+  const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
+  const featured = enemy.trial !== undefined ? 3 : enemy.rank === 'major' && enemy.chapter === 9 ? 0 :
+    isFinalBoss(enemy) ? (enemy.chapter === last || phase === 3 ? 2 : 1) : null;
+  const sprite = enemy.boss ? (enemy.hiddenRegion !== undefined && variant % 2 ? 5 : 4) : variant;
+  const image = featured === null ? picture('enemy-' + sprite) : picture('boss-' + featured);
+  const bob = reducedMotion.matches ? 0 : Math.sin(clock * 6 + (enemy.slot ?? 0)) * (variant > 1 ? 2 : 1);
+  const size = (enemy.boss ? 64 : 48) * scale;
+  groundShadow(x, y + 1, size * .37, size * .08);
+  if (!image) return;
   ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-  const color = clock < enemy.flash && !reducedMotion.matches ? '#ffe9d7' : enemy.color;
-  rect(-14, 0, 28, 4, '#242031');
-  const variant = enemy.variant ?? enemy.trial;
-  const bob = reducedMotion.matches ? 0 : Math.sin(clock * 6 + (enemy.slot ?? 0)) * 2;
-  if (variant === 1) {
-    polygon([[-19,-3],[-21,-15],[-12,-29],[11,-29],[22,-15],[19,-3]], '#3d3748');
-    polygon([[-16,-8],[-14,-19],[-7,-25],[8,-25],[16,-19],[16,-8]], color);
-    rect(-14,-14,28,3,'#503745');
-    rect(-6,-11,12,3,'#f2bf85');
-  } else if (variant === 2) {
-    ctx.translate(0, bob - 5);
-    diamond(0, -16, 17, 18, '#422944');
-    diamond(0, -16, 13, 14, color);
-    diamond(0, -16, 5, 7, '#fff0ad');
-    diamond(-18, -10, 3, 5, color);
-    diamond(18, -21, 3, 5, color);
-  } else if (variant === 3) {
-    ctx.translate(0, bob);
-    polygon([[-17,0],[-19,-12],[-8,-26],[6,-29],[15,-16],[20,0],[10,-5],[5,1],[-2,-5],[-11,1]], color);
-    rect(-7,-18,3,4,'#382841');
-    rect(4,-18,3,4,'#382841');
-  } else {
-    polygon([[-14, 0], [-15, -13], [-20, -31], [-6, -24], [0, -30], [6, -24], [20, -31], [15, -13], [14, 0]], '#422944');
-    polygon([[-12, -2], [-14, -17], [-9, -23], [9, -23], [14, -17], [12, -2]], color);
-    rect(-8, -16, 5, 3, '#382841');
-    rect(3, -16, 5, 3, '#382841');
-  }
-  if (enemy.boss) polygon([[-11, -28], [-13, -39], [-5, -34], [0, -42], [5, -34], [13, -39], [11, -28]], '#ffd280');
+  ctx.translate(x, y + bob);
+  if (battle && battle.heroX > battle.enemyX && !enemy.boss && sprite === 0) ctx.scale(-1, 1);
+  if (clock < enemy.flash && artQuality === 'high') ctx.filter = 'brightness(1.6)';
+  else if (enemy.boss && featured === null && artQuality !== 'low') ctx.filter = 'hue-rotate(' + (enemy.chapter * 17 % 140) + 'deg)';
+  ctx.imageSmoothingEnabled = artQuality !== 'low';
+  ctx.drawImage(image, -size / 2, -size * .95, size, size);
   ctx.restore();
 }
 
 function drawHome() {
+  const image = picture(mode === 'home' ? 'story-1' : 'land-0');
+  if (image) {
+    coverArt(ctx, image, 0, 0, 640, 360);
+    lightAt(ctx, 468, 123, 155, '#ffc48240');
+    return;
+  }
   rect(0, 0, 640, 360, '#24213a');
   for (let i = 0; i < 44; i++) {
     diamond((i * 131 + 16) % 640, (i * 29 + 19) % 232, i % 3 + 1, i % 3 + 1, '#f5cb9a');
@@ -186,6 +160,17 @@ function drawBuilding(site, camera) {
     return;
   }
   const tall = ['church','hall','library'].includes(site.kind);
+  if (site.kind === 'inn' || site.kind === 'home') {
+    const inn = picture('landmark-2');
+    if (inn) {
+      ctx.drawImage(inn, x - 26, y - 49, 52, 53);
+      rect(x - 9, y - 11, 18, 9, '#382f42e3');
+      label(mark, x, y - 3, '#ffe1ab', 8);
+      if (townNight()) lightAt(ctx, x + 7, y - 8, 22, '#ffbc606d');
+      if (doorContact === site || Math.abs(player.x - site.x) <= 12) label(name, x, y + 15, '#fff0cf', 10);
+      return;
+    }
+  }
   const highRoof = tall || town.style === '急勾配' ? 52 : 41;
   rect(x - 21, y + 6, 43, 7, '#1a273677');
   rect(x - 19, y - 30, 38, 39, town.style === '白壁' ? '#dbd4be' : '#bfa080');
@@ -199,6 +184,12 @@ function drawBuilding(site, camera) {
   const flat = site.kind === 'store' || town.style === '土壁';
   polygon([[x - 24, y - 26], [x - (flat ? 18 : 4), y - highRoof],
     [x + (flat ? 18 : 4), y - highRoof], [x + 24, y - 26]], color);
+  for (let i = -19; i <= 19; i += 5) {
+    const edge = (y - 27) - (highRoof - 26) * (flat ? .45 : .8) * (1 - Math.abs(i) / 22);
+    ctx.strokeStyle = '#3c344e81';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + i, y - 27); ctx.lineTo(x + i * .56, edge); ctx.stroke();
+  }
   rect(x - 23, y - 28, 46, 3, '#514352');
   if (tall) diamond(x, y - highRoof, 3, 6, '#e7ce9e');
   for (const side of [-1,1]) {
@@ -208,6 +199,7 @@ function drawBuilding(site, camera) {
     rect(wx + 2, y - 17, 1, 9, '#a58a73');
   }
   rect(x - 5, y - 11, 10, 20, '#463345');
+  if (townNight() && !siteAvailability(site)) lightAt(ctx, x + 16, y - 12, 22, '#ffbc6070');
   rect(x + 2, y - 2, 2, 2, '#f4ce88');
   rect(x - 8, y - 23, 16, 10, '#584554');
   label(mark, x, y - 15, '#ffe1ab', 8);
@@ -235,7 +227,7 @@ const roomDecor = {
   weapon:'剣架', armor:'鎧掛', items:'薬瓶', inn:'寝台', tavern:'樽',
   bank:'金庫', store:'商品棚', food:'食卓', church:'祭壇', library:'書架',
   bath:'湯船', smith:'金床', home:'戸棚', casino:'遊技台', ruin:'石像',
-  hall:'掲示板', secret:'石櫃'
+  hall:'掲示板', secret:'石櫃', regional:'石柱'
 };
 
 function drawRoomDetail(kind, x, y) {
@@ -278,21 +270,25 @@ function drawRoomDetail(kind, x, y) {
 function drawInterior() {
   const {site, x, y} = interior;
   const town = towns[site.chapter];
-  const [name, keeper, , , color] = townTypes[site.kind];
+  const [facility, keeper, , , color] = townTypes[site.kind];
+  const name = site.kind === 'regional' ? prefectures[site.chapter].dungeon : facility;
   rect(0, 0, 640, 360, '#202437');
-  rect(38, 45, 564, 271, '#58465a');
-  rect(50, 79, 540, 225, site.kind === 'secret' || site.kind === 'ruin' ? '#585469' : '#86694f');
+  const cave = ['secret','ruin','regional'].includes(site.kind);
+  if (cave) landscapeArt(ctx, site.chapter, 0, true);
+  rect(38, 45, 564, 271, cave ? '#4b456887' : '#58465a');
+  rect(50, 79, 540, 225, cave ? '#57546a97' : '#86694f');
   for (let row = 80; row < 304; row += 24) {
     rect(52, row, 536, 1, '#e0bf9a44');
     for (let col = 52 + (row % 48 ? 0 : 28); col < 588; col += 56) rect(col, row, 1, 24, '#503b4144');
   }
   rect(226, 154, 188, 91, color);
   rect(232, 160, 176, 79, '#c49d8333');
-  if (site.kind !== 'secret' && site.kind !== 'ruin') {
+  if (!['secret','ruin','regional'].includes(site.kind)) {
     for (const wx of [122, 484]) {
       rect(wx, 56, 31, 18, '#282b42');
       rect(wx + 3, 58, 25, 13, townNight() ? '#ffc670' : '#a2c4cb');
       rect(wx + 14, 58, 2, 13, '#7c665a');
+      lightAt(ctx, wx + 15, 75, 44, townNight() ? '#ffc36575' : '#cfe6ed45');
     }
   }
   label(name + ' · ' + town.name, 320, 68, '#ffe2b6', 16);
@@ -314,7 +310,11 @@ function drawInterior() {
   }
   rect(292, 300, 56, 16, '#2d293f');
   label('出口', 320, 298, '#ffe6b8', 12);
-  if (site.kind === 'secret') {
+  if (site.kind === 'regional') {
+    lightAt(ctx, 320, 100, 68, '#98a6ef70');
+    diamond(320, 100, 16, 23, prefectures[site.chapter].color);
+    label('守り石', 320, 76, '#e8d5b9', 12);
+  } else if (site.kind === 'secret') {
     rect(301, 88, 38, 20, site.seal.solved ? '#999182' : '#ba8664');
     rect(303, 96, 34, 3, '#685171');
     diamond(320, 99, 4, 5, '#ffda8a');
@@ -329,34 +329,69 @@ function drawInterior() {
 }
 
 function drawField(chapter, camera) {
-  const [ground, leaf] = palettes[chapter];
+  const [ground, leaf] = palettes[chapter] || ['#354b50', prefectures[chapter].color];
   const light = ctx.createLinearGradient(0, 0, 0, 360);
   light.addColorStop(0, '#253248');
   light.addColorStop(.40, ground);
   light.addColorStop(1, '#1f3443');
   ctx.fillStyle = light;
   ctx.fillRect(0, 0, 640, 360);
-  for (let i = -1; i < 7; i++) {
+  const painted = landscapeArt(ctx, chapter, camera);
+  if (!painted) for (let i = -1; i < 7; i++) {
     const ridge = i * 130 - (camera * .19 % 130);
     polygon([[ridge, 115],[ridge + 59, 36 + (i % 3) * 12],[ridge + 138, 115]], '#354650');
   }
-  rect(0, 119, 640, 23, chapter === 2 || chapter === 8 ? '#6b9bb0' : ground);
-  if (chapter === 2 || chapter === 8) {
-    for (let i = 0; i < 20; i++) rect((i * 79 - camera * .3) % 640, 121 + i * 5 % 18, 19, 1, '#abcbcb');
+  if (!painted) rect(0, 119, 640, 23, ['water','coast','river'].includes(prefectures[chapter].terrain) ? '#6b9bb0' : ground);
+  if (['water','coast','river'].includes(prefectures[chapter].terrain)) {
+    for (let i = 0; i < 20; i++) {
+      const x = (i * 79 - camera * .28 + Math.sin(clock * .7 + i) * 8) % 640;
+      rect(x, 124 + i * 17 % 38, 10 + i % 5 * 4, 1, '#b1d8d879');
+    }
   }
-  rect(0, 172, 640, 54, '#aca07d');
-  rect(0, 178, 640, 42, '#bdac89');
+  const pathPaint = ctx.createLinearGradient(0, 167, 0, 229);
+  pathPaint.addColorStop(0, '#88736100');
+  pathPaint.addColorStop(.30, '#9a866bc2');
+  pathPaint.addColorStop(.72, '#a49276c2');
+  pathPaint.addColorStop(1, '#88736100');
+  ctx.fillStyle = pathPaint;
+  ctx.fillRect(0, 167, 640, 62);
   for (let i = Math.floor(camera / 48); i < (camera + 660) / 48; i++) {
     const x = i * 48 - camera;
     rect(x, 184 + i % 4 * 8, 12, 2, '#98866e');
     for (const y of [105 + i % 3 * 5, 280 + i % 2 * 11]) {
-      rect(x + 12, y + 14, 7, 17, '#574056');
-      rect(x + 3, y + 4, 24, 15, leaf);
-      rect(x + 7, y, 16, 8, leaf);
+      const wind = reducedMotion.matches ? 0 : Math.sin(clock * 1.4 + i * .8) * 3;
+      if (y > 200 || !painted) {
+        groundShadow(x + 15, y + 25, 11, 3);
+        polygon([[x + 14,y + 27],[x + 16 + wind,y + 5],[x + 20 + wind,y + 13],[x + 18,y + 27]], '#51463e');
+        for (const offset of [-7,0,7]) {
+          const top = y + 8 + Math.abs(offset) * .8;
+          polygon([[x + 16 + offset + wind,top - 10],[x + 25 + offset,top + 8],
+            [x + 15 + offset,top + 14],[x + 7 + offset,top + 6]], leaf);
+        }
+      }
     }
     diamond(x + 15, 145 + i % 3 * 38, 2, 2, '#e4cf9c');
   }
+  ageLight(ctx);
   drawTown(chapter, camera);
+  const view = scenicSpot(chapter);
+  const sx = view.x - camera;
+  if (sx > -30 && sx < 670) {
+    const region = prefectures[chapter];
+    const icon = picture('landmark-' + landmarkFor(region));
+    const width = 72 + chapter % 4 * 6;
+    if (icon) {
+      groundShadow(sx, view.y + 93, width * .42, 9);
+      ctx.drawImage(icon, sx - width / 2, view.y + 94 - width, width, width);
+    } else rect(sx - 18, view.y + 85, 36, 20, '#77708a');
+    if (!icon) {
+      rect(sx - 14, view.y + 82, 28, 7, region.color);
+      rect(sx - 12, view.y + 75, 2, 14, '#f3d9b7');
+      rect(sx + 10, view.y + 75, 2, 14, '#f3d9b7');
+    }
+    label(region.sight, sx, view.y + 106, '#ffe8b6', 10);
+    if (townNight()) lightAt(ctx, sx, view.y + 78, 35, '#f6c78069');
+  }
   for (const gem of gems) {
     if (gem.on && Math.abs(gem.x - player.x) < 640) diamond(gem.x - camera, gem.row + 89, 6, 9, '#ffe5a0');
   }
@@ -402,6 +437,7 @@ function drawField(chapter, camera) {
     ctx.globalAlpha = 1;
   }
   hero(x, y, .9, player.facing.x);
+  skyEffects(ctx, chapter);
   if (clock < swingUntil) {
     const {x: dx, y: dy} = player.facing;
     polygon([[x, y - 9], [x + dx * 31 - dy * 10, y - 9 + dy * 31 + dx * 10],
@@ -409,23 +445,50 @@ function drawField(chapter, camera) {
   }
 }
 
+function slashArc(x, y, face, distance) {
+  if (artQuality === 'low') return;
+  const progress = clamp(1 - (swingUntil - clock) * 4, 0, 1);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(face < 0 ? -1 : 1, 1);
+  ctx.globalAlpha = Math.max(.2, 1 - progress * .7);
+  ctx.lineWidth = 5 - progress * 3;
+  ctx.strokeStyle = swingKind === 'air' ? '#a5ddff' : '#fce3a9';
+  ctx.beginPath();
+  ctx.ellipse(8, 0, distance * .75, 28, .24, -.97 + progress, .54 + progress);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawBattle() {
   const {enemy, heroX, enemyX, strike, damageFlash} = battle;
   const boss = enemy.boss;
-  const phase = enemy.rank === 'major' && enemy.chapter === last ? finalPhase(enemy) : 1;
+  const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
+  ctx.save();
+  combatCamera(ctx);
   rect(0, 0, 640, 360, phase === 3 ? '#4c203a' : phase === 2 ? '#362455' : boss ? '#301f3e' : '#252f45');
-  polygon([[0, 0], [225, 122], [415, 122], [640, 0]], '#433450');
-  polygon([[0, 360], [0, 262], [220, 207], [420, 207], [640, 262], [640, 360]], '#554057');
-  for (const x of [38, 94, 159, 481, 546, 602]) {
-    rect(x, 64, 7, 161, '#725169');
-    rect(x - 5, 218, 17, 5, '#a67c84');
-  }
-  rect(0, 242, 640, 4, '#987388');
+  landscapeArt(ctx, enemy.chapter, 0, boss);
+  const stageLight = ctx.createLinearGradient(0, 164, 0, 350);
+  stageLight.addColorStop(0, '#35263a00');
+  stageLight.addColorStop(.35, '#342a45b8');
+  stageLight.addColorStop(1, '#1e1a33f0');
+  ctx.fillStyle = stageLight;
+  ctx.fillRect(0, 164, 640, 186);
+  rect(0, 245, 640, 1, '#fbd5a34a');
+  if (boss) lightAt(ctx, enemyX, 193, 85, phase === 3 ? '#ffc2644e' : '#be8dff45');
   if (strike) {
     const width = strike.wave ? 640 : strike.range;
     const x = strike.wave ? 0 : enemyX + (strike.direction < 0 ? -width : 0);
     rect(x, 237, width, 6, '#e78181');
     label(strike.label, enemyX, 151, '#ffc0ab', 18);
+  }
+  if (boss && battle.age < 1.25) {
+    const fade = Math.min(1, battle.age * 6, (1.25 - battle.age) * 3);
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    rect(118, 120, 404, 29, '#141426d4');
+    label(enemy.name, 320, 140, '#ffeac2', 17);
+    ctx.restore();
   }
   const offset = clock < damageFlash && !reducedMotion.matches ? Math.sign(heroX - enemyX) * 10 : 0;
   monster(enemy, enemyX + offset, 244, boss ? 1.55 + phase * .25 : 1.4);
@@ -468,7 +531,7 @@ function drawBattle() {
       polygon([[x,224],[x + reach,205],[x + reach * .65,232]], '#ffe0a0');
     }
   }
-  if (joined && cat.hp > 0) drawCat(battle.catX, 247, 1.15 + cat.form * .13, cat.form);
+  if (joined) drawCat(battle.catX, 247, 1.15 + cat.form * .13, cat.form);
   const effect = battle.catEffect;
   if (effect && effect.until > clock && !reducedMotion.matches) {
     const color = catForm().color;
@@ -497,9 +560,20 @@ function drawBattle() {
     const dx = player.facing.x;
     const end = (equipped('weapon').reach ?? 55) * dx;
     const air = swingKind === 'air';
+    slashArc(heroX, heroY - 23, dx, Math.abs(end));
     polygon([[heroX, heroY - 25], [heroX + end, heroY - (air ? 4 : 48)],
       [heroX + end * .86, heroY - (air ? 17 : 26)], [heroX + end * .45, heroY - 11]], air ? '#95dfff' : '#fff2b9');
   }
+  if (clock < enemy.flash && artQuality !== 'low') {
+    lightAt(ctx, enemyX, 198, 43, '#ffc88069');
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      const spread = (enemy.flash - clock) * 95;
+      diamond(enemyX + Math.cos(angle) * spread, 199 + Math.sin(angle) * spread, 2, 3, '#ffdc9a');
+    }
+  }
+  drawCinematicEffect(ctx, battle.catX + 10, 211, cat.form === 5);
+  ctx.restore();
 }
 
 function render() {
@@ -539,6 +613,10 @@ function render() {
     const x = glow.x - (glow.field ? camera : 0);
     ctx.strokeStyle = '#9ee8ff';
     ctx.lineWidth = 4;
+    lightAt(ctx, x, glow.y, 45, '#a6d6ff83');
+    ctx.beginPath();
+    ctx.ellipse(x, glow.y + 13, 22, 8, 0, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(x, glow.y);
     ctx.lineTo(x + glow.dx * starterRing.reach, glow.y + glow.dy * starterRing.reach);
@@ -553,11 +631,18 @@ function render() {
 
 let previousFrame = null;
 let lastUI = 0;
+let lastDraw = -Infinity;
 function frame(timestamp) {
   const elapsed = previousFrame === null ? 0 : Math.min((timestamp - previousFrame) / 1000, .05);
   previousFrame = timestamp;
-  if (!document.hidden) update(elapsed);
-  render();
+  const moment = cinemaMoment();
+  const timeScale = moment?.kind === 'impact' && moment.progress < .38 ? .52 : 1;
+  if (!document.hidden) update(elapsed * timeScale);
+  const frameInterval = artQuality === 'low' ? 47 : artQuality === 'medium' ? 24 : 15;
+  if (!document.hidden && timestamp - lastDraw >= frameInterval) {
+    render();
+    lastDraw = timestamp;
+  }
   if (timestamp - lastUI > 55) {
     updateUI();
     lastUI = timestamp;

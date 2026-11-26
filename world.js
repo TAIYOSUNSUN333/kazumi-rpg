@@ -28,8 +28,17 @@ const chapters = [
   ['ヴィットリオが最後の亀裂を広げている。一美は足もとのソソと目を合わせ、剣を抜いた。', '二人の力を合わせれば、ヴィットリオの守りを破れる。']
 ];
 
+const originalFinal = chapters.length - 1;
+for (const region of prefectures.slice(chapters.length)) {
+  const final = region.name === '沖縄県';
+  chapterInfo.push([region.town, final ? '星蝕の継承者レグルス' : region.companion + 'の地脈を守る番人']);
+  chapters.push([final ? '各地の地脈が首里の石垣に集まる。ソソと力を合わせて旅を締めくくろう。' :
+    region.sight + 'を望む街で、' + region.specialty + 'を運ぶ旅人が道の封印について語った。',
+    region.dungeon + 'の方角から、地脈が澄んだ音を返した。']);
+}
 const span = 960;
 const last = chapters.length - 1;
+const isFinalBoss = enemy => enemy.rank === 'major' && (enemy.chapter === originalFinal || enemy.chapter === last);
 const limit = span * chapters.length - 1;
 const camps = chapters.map((_, i) => ({x: i * span + 30, row: 104}));
 const shrines = chapters.map((_, i) => ({x: i * span + 775, row: i % 2 ? 146 : 62, solved: false}));
@@ -40,6 +49,10 @@ const npcs = [
   {x: 630, name: '恵美ちゃん', line: '「夜道は私が照らすね」'},
   {x: 710, name: 'タク', line: '「風が変わった。急ごう」'}
 ];
+for (const [chapter, region] of prefectures.entries()) {
+  npcs.push({x:chapter * span + 250, name:region.companion,
+    line:'「' + region.sight + 'への道なら案内できるよ。' + region.dish + 'も食べていってね」'});
+}
 const gems = chapters.flatMap((_, i) => [140, 340, 550, 690].map((spot, j) =>
   ({x: i * span + spot, row: [62, 146][(i + j) % 2], on: true})));
 
@@ -63,6 +76,7 @@ const attackPatterns = {
 };
 const midBosses = ['桜鎌の番人', '夜啼き狼', '珊瑚の騎士', '黒晶ゴーレム', '落風の姉妹', '歯車の司祭',
   '霧渡りの魔女', '砂灯の巨人', '銀鍵の猟犬', '星図の番兵', '裂空の使徒', '終鐘の守衛'];
+midBosses.push(...prefectures.slice(originalFinal + 1).map(region => region.companion + 'の街道の幻獣'));
 const awakening = [
   {turn: 0, name: '無属性', hp: 12000, mp: 600, atk: 1700, def: 500, speed: 168, color: '#f0d6b5', spell: '猫爪'},
   {turn: 3, name: '炎属性', hp: 20000, mp: 1000, atk: 2600, def: 1000, speed: 195, color: '#ff9766', spell: '聖炎'},
@@ -77,7 +91,7 @@ const trials = [
   ['雷帝ルシアーノ', '#e2c476', ['rush','wave','rush'], 0, {name:'雷帝の剣', bonus: 48}, '雷冠を継ぐ者'],
   ['闇帝ドミニク', '#b582da', ['wave','rush','wave'], 1, {name:'闇帝の鎧', bonus: 31}, '闇冠を継ぐ者']
 ].map(([name, color, pattern, armor, reward, title], trial) => ({
-  name, color, pattern, armor, reward, title, trial, boss: true, chapter: last,
+  name, color, pattern, armor, reward, title, trial, boss: true, chapter: originalFinal,
   max: 210000 + trial * 38000, speed: 63 + trial * 7, range: 35, power: 65 + trial * 6, interval: 1.25 - trial * .1
 }));
 const enemies = chapters.flatMap((_, chapter) => [205, 260, 400, 525, 610, 720, 815, 910].map((spot, slot) => {
@@ -86,14 +100,16 @@ const enemies = chapters.flatMap((_, chapter) => [205, 260, 400, 525, 610, 720, 
   const optional = slot === 1 || slot === 4;
   const variant = (chapter + slot) % enemyKinds.length;
   const kind = enemyKinds[variant];
-  const max = chapter >= 10 ? (rank === 'major' ? 54000 + (chapter - 10) * 54000 :
+  const max = chapter > originalFinal ? (rank === 'major' ? 62000 + (chapter - 12) * 1800 :
+    rank === 'mid' ? 23500 + (chapter - 12) * 850 : 2400 + chapter * 180 + slot * 240) :
+    chapter >= 10 ? (rank === 'major' ? 54000 + (chapter - 10) * 54000 :
     rank === 'mid' ? 27000 + (chapter - 10) * 12000 : 3000 + slot * 280) :
     boss ? (rank === 'mid' ? 62 + chapter * 15 : 88 + chapter * 18) : 24 + chapter * 6 + slot * 2;
   const homeX = chapter * span + spot;
   const homeY = optional ? (slot === 1 ? 62 : 146) : 104;
   return {
     ...kind, variant, name: rank === 'major' ? chapterInfo[chapter][1] : rank === 'mid' ? midBosses[chapter] : kind.name,
-    power: kind.power + chapter * 2 + (boss ? 5 : 0), max, hp: max,
+    power: kind.power + Math.min(chapter, 11) * 2 + Math.floor(Math.max(0, chapter - 11) * .58) + (boss ? 5 : 0), max, hp: max,
     homeX, homeY, x: homeX, y: homeY, chapter, slot, boss, rank, optional, flash: 0
   };
 }));

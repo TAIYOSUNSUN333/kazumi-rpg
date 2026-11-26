@@ -21,6 +21,14 @@ townMelodies.forEach((melody, index) => {
   scores['town' + index] = [76 + index * 3, index % 3 === 1 ? 'flute' : 'piano',
     [root, root + 5, root - 2, root + 2], melody];
 });
+for (let index = townMelodies.length; index < prefectures.length; index++) {
+  const source = townMelodies[index % townMelodies.length];
+  const shift = Math.floor(index / townMelodies.length) - 2;
+  const melody = source.map((note, i) => note + shift + (i === 2 ? index % 4 : 0));
+  const root = melody[0] - 17;
+  scores['town' + index] = [76 + index % 12 * 3, index % 3 === 1 ? 'flute' : 'piano',
+    [root, root + 5, root - 2, root + 2], melody];
+}
 const effects = {
   seal: [55, 60, 64, 67, 72, 79],
   jump: [55, 62], air: [74, 62, 55], magic: [67, 74, 81], pot: [48, 58, 44],
@@ -113,7 +121,7 @@ class GameAudio {
       }
       if (this.track.startsWith('town') && (index === 2 || index === 7)) {
         const region = Number(this.track.slice(4));
-        const pitch = [75,69,53,62,78,67,57,72,84,65,79,55][region];
+        const pitch = [75,69,53,62,78,67,57,72,84,65,79,55][region % 12];
         this.note(pitch, this.next + .05, beat * (region % 3 + 1), .027, region % 2 ? 'strings' : 'flute', this.music);
       }
       this.next += beat;

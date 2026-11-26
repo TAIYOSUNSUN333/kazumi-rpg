@@ -5,6 +5,22 @@ const companionProfiles = {
   タク: {job:'自然術師', hp:87, mp:43, power:14, defense:4, speed:101, reach:98, skill:'枝走りの雷', role:'magic', color:'#648f70', hair:'#302c29', skin:'#b98165', width:9}
 };
 
+const localJobs = {
+  forest:['森案内人','木守の風', 'heal'], coast:['潮読み','潮返し', 'magic'],
+  mountain:['峠の護衛','岩砕き', 'sword'], water:['水路守','水鏡の祈り', 'heal'],
+  sand:['砂丘の道標守','砂走り', 'sword'], snow:['雪道の先導役','霜の灯', 'magic'],
+  river:['渡し守','流れ弾き', 'magic']
+};
+for (const [index, region] of prefectures.entries()) {
+  const [job, skill, role] = localJobs[region.terrain];
+  companionProfiles[region.companion] = {
+    job, skill, role, hp:76 + index % 5 * 6, mp:23 + index % 7 * 4, power:12 + index % 6 * 2,
+    defense:4 + index % 4, speed:88 + index % 5 * 6, reach:65 + index % 6 * 6,
+    color:region.color, hair:['#49352f','#383242','#704b3f'][index % 3],
+    skin:['#f2d2b3','#d49c77','#e7ba95'][index % 3], width:8 + index % 4
+  };
+}
+
 const companions = new Map();
 const companionTrail = {x: 0, y: 104};
 let contactNpc = null;
