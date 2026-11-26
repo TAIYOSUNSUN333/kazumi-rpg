@@ -37,6 +37,8 @@ function restoreCompanions(data) {
     const member = {name, xp:numeric(old?.xp, 0, 0, 300000), gear:numeric(old?.gear, 0, 0, 3),
       affinity:numeric(old?.affinity, 0, -100, 100),
       history:Array.isArray(old?.history) ? old.history.filter(value => typeof value === 'string').slice(-50) : []};
+    if (old?.departed) member.departed = {gold:numeric(old.departed.gold,0,0,bankLimit),
+      day:numeric(old.departed.day,0,0,100000)};
     member.hp = numeric(old?.hp, companionHP(member), 0, companionHP(member));
     member.mp = numeric(old?.mp, companionMP(member), 0, companionMP(member));
     companions.set(name, member);
@@ -60,6 +62,21 @@ function recruitment(npc) {
     '得意技 ' + profile.skill];
   if (existing) {
     panel(npc.name, [...lines, '同行中の' + existing.name + 'と酒場で別れると、誘うことができます。'], [['戻る', resume]]);
+    return;
+  }
+  if (record?.departed) {
+    const ready = townDay() > record.departed.day;
+    panel(npc.name, [ready ? '「あの晩のこと、謝りたかった。預かったお金を返したい」' :
+      'もう少し時間を置いてから、話を聞こう。'], [
+      ['話を聞いて和解する', () => {
+        player.gold = Math.min(bankLimit,player.gold + record.departed.gold);
+        record.departed = null;
+        record.affinity = -20;
+        remember(record,'和解して返金を受けた');
+        save();
+        recruitment(npc);
+      }, !ready], ['戻る', resume]
+    ]);
     return;
   }
   panel(npc.name + 'を仲間にしますか？', lines, [
@@ -135,8 +152,10 @@ function followCompanion(dt) {
   if (!currentCompanion()) return;
   const dx = player.x - companionTrail.x, dy = player.y - companionTrail.y;
   const gap = Math.hypot(dx, dy);
+  const targetHeight = Math.max(0, jumpHeight - gap * .25);
+  companionTrail.height = (companionTrail.height ?? 0) + (targetHeight - (companionTrail.height ?? 0)) * Math.min(1,dt * 10);
   if (gap <= 25) return;
-  const step = Math.min(gap - 25, dt * (returning ? 420 : gait === 'run' ? 182 : 132));
+  const step = Math.min(gap - 25, dt * (returning ? 420 : ['run','dash'].includes(gait) ? 182 : 132));
   companionTrail.x += dx / gap * step;
   companionTrail.y += dy / gap * step;
 }
@@ -144,55 +163,4 @@ function followCompanion(dt) {
 function awardCompanion(xp) {
   const member = currentCompanion();
   if (member) member.xp = Math.min(300000, member.xp + xp);
-}
-
-function hurtCompanion(strike) {
-  const member = currentCompanion();
-  if (!member?.hp || !strikeContains(strike, actorPoint('ally'), arenaAlly.radius) || battle.allyDodge > clock) return;
-  const damage = Math.max(1, Math.round((strike.power - companionProfiles[member.name].defense -
-    (companionLevel(member) - 1) - member.gear) * (battle.allyGuard > clock ? .42 : 1)));
-  member.hp = Math.max(0, member.hp - damage);
-  battle.allyHit = clock + .18;
-  const away = directionTo(battle.allyX - strike.x, battle.allyY - strike.y);
-  if (battle.allyGuard <= clock) moveArena('ally', away.x, away.y, 9, [enemyBlocker()]);
-  addNumber(damage, battle.allyX, battleDepth(battle.allyY) - 40, '#ffada6');
-}
-
-function updateCompanion(dt) {
-  const member = currentCompanion();
-  if (!member?.hp) return;
-  const profile = companionProfiles[member.name];
-  const warning = battle.strike;
-  if (warning && strikeContains(warning, actorPoint('ally'), arenaAlly.radius) && warning.at - clock < .27 && clock >= battle.allyDefenseAt) {
-    battle.allyDefenseAt = clock + 3.4;
-    if (profile.role === 'sword' || warning.wave) battle.allyGuard = clock + .38;
-    else {
-      battle.allyDodge = clock + .32;
-      retreatFromStrike('ally', 42);
-    }
-    return;
-  }
-  if (battle.allyGuard > clock || battle.allyDodge > clock) return;
-  const direction = directionTo(battle.enemyX - battle.allyX, battle.enemyY - battle.allyY);
-  if (clock >= battle.allyNext && profile.role === 'heal' && member.mp >= 5 &&
-      (player.hp < maxHP() * .68 || member.hp < companionHP(member) * .62)) {
-    const heal = 16 + companionLevel(member) * 2;
-    player.hp = Math.min(maxHP(), player.hp + heal);
-    member.hp = Math.min(companionHP(member), member.hp + heal);
-    member.mp -= 5;
-    battle.allyNext = clock + 2.7;
-    battle.allyAction = {kind:'heal', until:clock + .45};
-    audio.play('holy');
-    return;
-  }
-  const magic = profile.role === 'magic' && member.mp >= 3;
-  const reach = (magic ? profile.reach : 35) + battle.body.radius;
-  if (!closeOnEnemy('ally', dt, profile.speed, reach, true)) return;
-  if (clock < battle.allyNext) return;
-  battle.allyNext = clock + (magic ? 1.7 : 1.22);
-  battle.allyAction = {kind:magic ? 'magic' : 'attack', until:clock + .29, direction};
-  if (magic) member.mp -= 3;
-  audio.play(magic ? 'magic' : 'attack');
-  battle.allyPressure = clock + 1.6;
-  positionalHit(actorPoint('ally'), profile.power + (companionLevel(member) - 1) * 2 + member.gear * 3 + (magic ? 5 : 0));
 }

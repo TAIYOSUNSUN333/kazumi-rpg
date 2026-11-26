@@ -175,6 +175,48 @@ for (let n = 3; n <= 16; n++) {
     hint: '7日たつと元の曜日に戻ります。'});
 }
 
+// 地域データは実在の地名・特産・行事から出題する。
+const localCategories = [
+  ['sight', 'がある都道府県は？', '旅の地図で場所を思い出しましょう。'],
+  ['specialty', 'が特産として知られる都道府県は？', 'この土地の店で見かける品です。'],
+  ['festival', 'が行われる都道府県は？', '旅先のお祭りの名前を思い出しましょう。']
+];
+riddles.local = prefectures.map((region, index) => {
+  const [key, prompt, hint] = localCategories[index % localCategories.length];
+  const topic = key === 'specialty' && region.specialty === 'しじみ' ? '宍道湖のしじみ' : region[key];
+  return {id:'local-' + index, prompt:topic + prompt, answer:region.name,
+    choices:[0, 7, 19, 31].map(offset => prefectures[(index + offset) % prefectures.length].name), hint};
+});
+
+const knowledgeRows = {
+  easy: [
+    '夜に花の蜜を吸うコウモリの仲間はいる。コウモリは何の仲間？|哺乳類|鳥類|昆虫|魚類|子に乳を与えます。',
+    '日本で一番高い山は？|富士山|筑波山|六甲山|高尾山|静岡県と山梨県にまたがっています。',
+    'バッタは昆虫。足は何本？|6本|4本|8本|10本|昆虫の足は3対です。'
+  ],
+  middle: [
+    '鎌倉幕府の初代将軍は誰？|源頼朝|足利尊氏|徳川家康|織田信長|平氏をしりぞけた源氏の人物です。',
+    'パンの生地を膨らませる酵母が作る気体は？|二酸化炭素|窒素|水素|酸素|炭酸水にも溶けています。',
+    '秋に色づく葉の赤い色に関わる色素は？|アントシアニン|クロロフィル|メラニン|ヘモグロビン|ブドウの皮などにも見られます。',
+    '青森県と北海道の間にある海峡は？|津軽海峡|関門海峡|鳴門海峡|紀淡海峡|海峡の名前は青森県西部の地名と同じです。',
+    'ペンギンの翼は、泳ぐときにどんな役割をする？|水をかく|魚をつかむ|水を吸う|水を温める|硬いひれのような形です。'
+  ],
+  hard: [
+    '大政奉還で政権を朝廷へ返上した江戸幕府の将軍は？|徳川慶喜|徳川家茂|徳川家定|徳川家光|江戸幕府の最後の将軍です。',
+    '満潮と干潮の差が大きくなりやすいのは？|新月と満月のころ|上弦と下弦のころ|夏至の日だけ|月の形と無関係|太陽・地球・月がほぼ一直線に並ぶときを考えます。',
+    '琵琶湖から流れ出た水は、瀬田川と宇治川を経て大阪湾へ向かう。下流の名前は？|淀川|木曽川|利根川|最上川|大阪市内を流れています。',
+    '植物が根から吸い上げた水は、主に葉のどの部分から水蒸気として出る？|気孔|葉脈|葉柄|葉緑体|葉にある小さな開閉口です。',
+    '現在の日本の時刻を定める標準時子午線は、東経何度？|135度|125度|140度|150度|兵庫県明石市を通る経線です。',
+    '現存する木造天守のある松本城はどの都道府県にある？|長野県|岐阜県|群馬県|山梨県|北アルプスの東側にあります。'
+  ]
+};
+for (const [tier, rows] of Object.entries(knowledgeRows)) {
+  rows.forEach((row, index) => {
+    const [prompt, answer, a, b, c, hint] = row.split('|');
+    riddles[tier].push({id:tier + '-knowledge-' + index, prompt, answer, choices:[answer, a, b, c], hint});
+  });
+}
+
 const riddlesById = new Map(Object.values(riddles).flat().map(question => [question.id, question]));
 
 function shrineTier(chapter) {
@@ -186,7 +228,8 @@ function shrineQuestion(shrine, chapter) {
   if (saved) return saved;
   const tier = riddles[shrineTier(chapter)];
   const assigned = new Set([...shrines, ...towns.map(town => town.sites.at(-1).seal)].map(entry => entry.questionId));
-  const available = tier.filter(question => !assigned.has(question.id));
+  const unassigned = tier.filter(question => !assigned.has(question.id));
+  const available = unassigned.length ? unassigned : tier;
   const question = available[Math.floor(Math.random() * available.length)];
   shrine.questionId = question.id;
   return question;

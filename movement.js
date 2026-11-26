@@ -22,7 +22,7 @@ const featureCache = [];
 const roofCache = new WeakMap();
 
 function movementAllowed() {
-  return !paused && (mode === 'field' || mode === 'battle') && !doorTransition;
+  return !paused && mode === 'field' && !doorTransition && !innScene;
 }
 
 function playableInput() {
@@ -62,8 +62,9 @@ function atFootprint(x,y,shape) {
 function surfacesAt(x,y) {
   const town = towns[chapterOf(x)];
   const {lift,ledge} = motionFeatures(town.chapter);
+  const stage = stageSurface(stagePaths[town.chapter]);
   const roof = town.sites.find(site => site.kind !== 'secret' && atFootprint(x,y,roofSurface(site)));
-  return [roof && roofSurface(roof), atFootprint(x,y,lift) && lift, atFootprint(x,y,ledge) && ledge]
+  return [roof && roofSurface(roof), atFootprint(x,y,lift) && lift, atFootprint(x,y,ledge) && ledge, stage && atFootprint(x,y,stage) && stage]
     .filter(Boolean);
 }
 
@@ -81,10 +82,12 @@ function floorUnderHero() {
 }
 
 function fieldBarrier(x,y) {
-  if (waterBlocks(x,y) && jumpHeight < 17) return true;
+  const stage = stagePaths[chapterOf(x)];
+  const frozen = stage.rune.spell.id === 'frost' && activatedRunes.has(stage.chapter) && Math.abs(x-stage.rune.x)<29;
+  if (waterBlocks(x,y) && jumpHeight < 17 && !frozen || stageBlocking(x,y)) return true;
   const {tunnel} = motionFeatures(chapterOf(x));
   if (atFootprint(x,y,tunnel) && !pressed('crouch') && jumpHeight < 30) return true;
-  return surfacesAt(x,y).some(surface => !surface.moving && jumpHeight + .25 < surface.height);
+  return surfacesAt(x,y).some(surface => !surface.moving && !surface.stage && jumpHeight + .25 < surface.height);
 }
 
 function fieldStepClear(x,y,toX,toY) {
@@ -197,10 +200,13 @@ function moveWithInput(dt) {
     if (runBlend > .44 && clock >= stepAt && jumpHeight <= floorUnderHero() + 4) {
       stepAt = clock + .24;
       audio.play('step');
-      const spot = battle ? actorPoint('hero') : interior || player;
-      runDust = {x:spot.x,y:spot.y,battle,interior,until:clock + .24};
+      const spot = interior || player;
+      runDust = {x:spot.x,y:spot.y,interior,until:clock + .24};
     }
-    const modifier = (clock < footingUntil ? .82 : 1) * (pressed('guard') ? .72 : 1) * (pressed('crouch') ? .51 : 1);
+    const trap = stagePaths[chapterOf(player.x)].trap;
+    const onTrap = !interior && jumpHeight < 7 && atFootprint(player.x,player.y,trap);
+    const terrainPace = onTrap && trap.kind === 'quicksand' ? .44 : onTrap && trap.kind === 'ice' ? 1.23 : 1;
+    const modifier = terrainPace * (clock < footingUntil ? .82 : 1) * (pressed('guard') ? .72 : 1) * (pressed('crouch') ? .51 : 1);
     gait = pressed('crouch') ? 'crouch' : runBlend > .4 ? 'run' : 'walk';
     movePlayer(x,y,dt * pace * modifier);
   } else {
@@ -210,7 +216,7 @@ function moveWithInput(dt) {
     if (!battle && destination) {
       const dx = destination.x - player.x, dy = destination.y - player.y;
       const distance = Math.hypot(dx,dy);
-      if (distance < 1) destination = null;
+      if (distance < 3.6) destination = null;
       else {
         gait = 'walk';
         movePlayer(dx,dy,Math.min(distance,dt * (returning ? 390 : 83)));
@@ -274,29 +280,52 @@ function actionEquipment() {
       actionEquipment();
     },shotGear === type || type === 'ring' && !ring]);
   }
+  if (stoneMagicLearned) buttons.push(['撃：' + stoneSpell.name, () => {
+    shotGear = 'moon';
+    save();
+    actionEquipment();
+  }, shotGear === 'moon']);
+  for (const spell of routeSpells.filter(spell => stageRuneAvailable(spell.id))) {
+    buttons.push(['撃：' + spell.name, () => {
+      shotGear = spell.id;
+      save();
+      actionEquipment();
+    }, shotGear === spell.id]);
+  }
   panel('斬撃・魔法の装備', [
     '斬　' + weapon.name + '　' + bladeForm().name,
-    shotGear === 'star' ? '撃　星の護符：MP10で必殺技。ソソとの連携に対応。' : '撃　魔法の指輪：MP4で飛んでいく火の玉。',
+    routeSpellById.has(shotGear) ? '撃　' + routeSpellById.get(shotGear).hint : shotGear === 'star' ? '撃　星の護符：MP10で必殺技。ソソとの連携に対応。' : shotGear === 'moon' ? '撃　' + stoneSpell.name + '：MP6で一美のHPを回復。' : '撃　魔法の指輪：MP4で飛んでいく火の玉。',
     ring ? '購入・獲得した装備を選べます。' : '魔法の指輪は装備屋・鍛冶屋で入手できます。'
   ],buttons);
 }
 
 let flameBolts = [];
 function useShot() {
-  if (shotGear === 'ring') castMagic(true);
-  else special();
+  if (routeSpellById.has(shotGear)) useRouteSpell(shotGear);
+  else if (shotGear === 'ring') castMagic();
+  else if (shotGear === 'moon') {
+    if (player.mp < stoneSpell.mp || player.hp >= maxHP() || clock < magicAt) return;
+    magicAt = clock + .55;
+    player.mp -= stoneSpell.mp;
+    const restored = Math.min(maxHP() - player.hp, Math.ceil(maxHP() * .28));
+    player.hp += restored;
+    sealEffect = {x:player.x, y:player.y, until:clock + .9};
+    addNumber('+' + restored + ' HP', player.x, player.y - 21, '#b4e9bd', true);
+    audio.play('holy');
+    save();
+  } else special();
 }
 
 function launchFireball(damage) {
-  const origin = battle ? actorPoint('hero') : player;
+  const origin = player;
   const direction = {...player.facing};
   flameBolts.push({x:origin.x + direction.x * 9,y:origin.y + direction.y * 9,direction,damage,
-    battle, height:Math.max(0,jumpHeight), distance:0, chapter:chapterOf(player.x)});
+    height:Math.max(0,jumpHeight), distance:0, chapter:chapterOf(player.x)});
 }
 
 function updateFireballs(dt) {
   flameBolts = flameBolts.filter(bolt => {
-    if (interior || bolt.battle !== battle || !battle && bolt.chapter !== chapterOf(player.x)) return false;
+    if (interior || bolt.chapter !== chapterOf(player.x)) return false;
     const step = Math.min(dt * 320,starterRing.reach - bolt.distance);
     if (step <= 0) return false;
     const {x,y} = bolt;
@@ -305,25 +334,16 @@ function updateFireballs(dt) {
       const progress = clamp((tx-x)*dx + (ty-y)*dy,0,step);
       return Math.hypot(tx - x - dx * progress,ty - y - dy * progress) <= radius;
     };
-    if (battle) {
-      if (hits(battle.enemyX,battle.enemyY,battle.body.radius + 8)) {
-        const approach = {x:x - dx * 20,y:y - dy * 20};
-        battle.heroPressure = clock + 1.35;
-        positionalHit(approach,bolt.damage,'magic');
-        return false;
-      }
-    } else {
-      const enemy = activeEnemies(bolt.chapter).find(foe =>
-        foe.hp && unlocked(foe) && !isFinalBoss(foe) && hits(foe.x,foe.y,13));
-      if (enemy) {
-        hurtEnemy(enemy,bolt.damage);
-        return false;
-      }
-      const pot = pots.slice(bolt.chapter * 3,bolt.chapter * 3 + 3).find(box => !box.broken && hits(box.x,box.y,10));
-      if (pot) {
-        breakPot(pot);
-        return false;
-      }
+    const enemy = activeEnemies(bolt.chapter).find(foe =>
+      foe.hp && unlocked(foe) && !isFinalBoss(foe) && hits(foe.x,foe.y,13));
+    if (enemy) {
+      hurtEnemy(enemy,bolt.damage);
+      return false;
+    }
+    const pot = pots.slice(bolt.chapter * 3,bolt.chapter * 3 + 3).find(box => !box.broken && hits(box.x,box.y,10));
+    if (pot) {
+      breakPot(pot);
+      return false;
     }
     bolt.x += dx * step;
     bolt.y += dy * step;
@@ -334,7 +354,10 @@ function updateFireballs(dt) {
 
 function ridePlatform() {
   if (interior || battle || !groundedOn?.moving || jumpHeight !== groundedOn.height) return;
-  const lift = motionFeatures(chapterOf(player.x)).lift;
+  const chapter = chapterOf(player.x);
+  const lift = groundedOn.stage === 'hoist' ? stageSurface(stagePaths[chapter]) : motionFeatures(chapter).lift;
+  if (!lift) return;
   player.x += lift.x - groundedOn.x;
+  jumpHeight += lift.height - groundedOn.height;
   groundedOn = lift;
 }

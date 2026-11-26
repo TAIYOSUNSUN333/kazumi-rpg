@@ -18,6 +18,7 @@ const townTypes = {
   ruin: ['廃墟', '遺跡の番人', 6, 20, '#777687', '跡'],
   hall: ['役所', '受付係', 8, 17, '#908d65', '役'],
   regional: ['隠しダンジョン', '守り石', 0, 24, '#666791', '洞'],
+  trailroom: ['灯の抜け道', '道しるべ', 0, 24, '#656789', '灯'],
   secret: ['地下の宝庫', '記録係', 0, 24, '#636985', '鍵']
 };
 
@@ -185,7 +186,10 @@ function entranceNearHero(contact = false) {
   if (interior || battle || jumpHeight > 8) return null;
   const chapter = chapterOf(player.x);
   const sites = towns[chapter].sites;
-  const candidates = tourBook[chapter]?.photo ? [...sites,townSites.get('regional-' + chapter)] : sites;
+  const candidates = [...sites];
+  if (tourBook[chapter]?.photo) candidates.push(townSites.get('regional-' + chapter));
+  const refuge = stagePaths[chapter].refuge;
+  if (refuge && activatedRunes.has(chapter)) candidates.push(refuge);
   return candidates.reduce((nearest, site) => {
     if (site.kind === 'secret' && !(townQuests[site.chapter] > 0)) return nearest;
     if (contact) {
@@ -411,8 +415,6 @@ function nearbyFieldAction() {
     if (companionProfiles[npc.name]) recruitment(npc);
     else say(npc.name + ' ' + npc.line);
   }};
-  const shrine = shrines[town.chapter];
-  if (!returning && !shrine.solved && closeTo(shrine.x,shrine.row,25)) return {label:'調べる', run:() => openShrine(shrine,town.chapter)};
   return null;
 }
 
@@ -422,7 +424,7 @@ function townInteraction() {
     if (roomCounterReady()) servicePanel();
     return;
   }
-  nearbyFieldAction()?.run();
+  (nearbyFieldAction() || nearbyStoneInteraction())?.run();
 }
 
 function trade(amount, apply, next = servicePanel) {
@@ -473,6 +475,14 @@ function servicePanel(note = '') {
   if (!interior) return;
   const {site} = interior;
   if (site.kind === 'regional') return dungeonPanel();
+  if (site.kind === 'trailroom') {
+    const path = stagePaths[site.chapter];
+    const claimed = stageClaims.has(site.chapter);
+    return panel('灯の抜け道', [claimed ? '宝箱は空になっている。' :
+      '古い地下道の奥に、旅人の備蓄が残っている。'], [
+      ['宝箱を開ける', () => { claimStageCache(path); servicePanel(); }, claimed], ['戻る',resume]
+    ]);
+  }
   if (site.kind === 'inn') audio.setTrack('innDesk');
   const town = towns[site.chapter];
   const [name, keeper] = townTypes[site.kind];
@@ -493,7 +503,7 @@ function servicePanel(note = '') {
       const step = player[type] + 1;
       const item = equipment[type][step];
       lines.push('品揃え　' + equipment[type].map(entry => entry.name).join('、'));
-      if (item) buy(item.name + 'を装備', item.cost, () => { player[type] = step; if (type === 'weapon') slashBase = null; trialGear[type] = null; regionalGear[type] = null; });
+      if (item) buy(item.name + 'を装備', item.cost, () => { player[type] = step; if (type === 'armor') stoneArmor = null; if (type === 'weapon') slashBase = null; trialGear[type] = null; regionalGear[type] = null; });
       else lines.push('現在の装備より上位の品は売り切れです。');
       break;
     }
@@ -541,8 +551,9 @@ function servicePanel(note = '') {
     case 'library': {
       const shrine = shrines[site.chapter];
       services.push(['章の記録を読む', () => servicePanel(chapters[site.chapter][0])]);
-      services.push(['封印の手がかりを探す', () => {
-        servicePanel(shrine.solved ? 'この章の封印は解除済みです。' : shrineQuestion(shrine, site.chapter).hint);
+      services.push(['旅の石碑の手がかりを読む', () => {
+        shrine.seen = true;
+        servicePanel(shrine.solved ? 'この章の星路の石碑には正解済みです。' : shrineQuestion(shrine, site.chapter).hint);
         save();
       }]);
       break;

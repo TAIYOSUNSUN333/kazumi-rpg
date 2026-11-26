@@ -9,6 +9,7 @@
   <script defer src="prefectures.js"></script>
   <script defer src="world.js"></script>
   <script defer src="riddles.js"></script>
+  <script defer src="stones.js"></script>
   <script defer src="audio.js"></script>
   <script defer src="companions.js"></script>
   <script defer src="towns.js"></script>
@@ -17,7 +18,9 @@
   <script defer src="battlefield.js"></script>
   <script defer src="inn.js"></script>
   <script defer src="terrain.js"></script>
+  <script defer src="stages.js"></script>
   <script defer src="movement.js"></script>
+  <script defer src="command-battle.js"></script>
   <script defer src="game.js"></script>
   <script defer src="render.js"></script>
 </head>
@@ -25,17 +28,11 @@
   <main id="game">
     <canvas id="scene" width="640" height="360" aria-label="一美の冒険"></canvas>
     <header id="hud" hidden>
-      <strong id="location"></strong>
-      <div id="town-clock"></div>
       <div id="vitals"></div>
-      <div id="progress"></div>
-      <div id="companion-status" hidden></div>
-      <div id="enemy-status" hidden></div>
-      <progress id="enemy-hp" aria-label="敵の残りHP" hidden></progress>
-      <div id="awakening" hidden><div id="soso-status"></div><progress id="awake-gauge" aria-label="ソソの覚醒ゲージ"></progress></div>
+      <progress id="field-hp" aria-label="一美のHP"></progress>
+      <progress id="field-mp" aria-label="一美のMP"></progress>
     </header>
     <p id="message" role="status" aria-live="polite"></p>
-    <div id="portrait">スマートフォンを横にすると遊びやすくなります</div>
     <div id="place-title" role="status" hidden></div>
     <nav id="menu" aria-label="メニュー">
       <button id="pause" aria-label="メニュー" hidden>
@@ -57,6 +54,14 @@
         <svg class="cooldown-ring" aria-hidden="true" viewBox="0 0 68 68"><circle cx="34" cy="34" r="31" pathLength="100"/></svg>
       </button>
     </nav>
+    <section id="battle-commands" aria-label="戦闘コマンド" hidden>
+      <div id="battle-timeline"><strong id="battle-round"></strong><span id="battle-order"></span></div>
+      <div id="battle-party"></div>
+      <div id="battle-intent" hidden></div>
+      <div id="battle-awakening" hidden><span id="battle-awakening-text"></span><progress id="battle-awakening-gauge" aria-label="ソソの覚醒ゲージ"></progress></div>
+      <p id="battle-log" role="status"></p>
+      <div id="battle-options"></div>
+    </section>
     <section id="panel" aria-labelledby="panel-title">
       <h1 id="panel-title">一美のスター街道</h1>
       <div id="panel-body"></div>

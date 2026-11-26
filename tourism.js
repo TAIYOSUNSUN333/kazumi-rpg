@@ -173,6 +173,7 @@ function regionalShop() {
     const price = (type === 'weapon' ? 32 : 27) + chapter * 3;
     const equip = () => {
       regionalGear[type] = chapter;
+      if (type === 'armor') stoneArmor = null;
       if (type === 'weapon') slashBase = null;
       trialGear[type] = null;
     };
@@ -337,6 +338,6 @@ function startRegionalBoss(id) {
     river:['rush','bite','wave'],water:['wave','slow'],sand:['rush','rush','slow'],snow:['slow','wave','bite']};
   encounter({name:region.guardian, hiddenRegion:id, boss:true, chapter:id, hp:max, max,
     power:19 + Math.floor(id * .55), interval:1.26, speed:47 + id % 6 * 5, range:32,
-    color:region.color, variant:id % 4, pattern:patterns[region.terrain], flash:0}, false);
+    color:region.color, variant:id % 4, pattern:patterns[region.terrain], flash:0});
   resume();
 }

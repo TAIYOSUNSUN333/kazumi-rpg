@@ -1,5 +1,72 @@
 const canvas = $('scene');
-const ctx = canvas.getContext('2d');
+const scene = document.createElement('canvas');
+scene.width = 640;
+scene.height = 360;
+const ctx = scene.getContext('2d');
+const screen = canvas.getContext('2d');
+const sceneBlend = document.createElement('canvas');
+sceneBlend.width = 640;
+sceneBlend.height = 360;
+const blend = sceneBlend.getContext('2d');
+const edgeMask = blend.createLinearGradient(0,0,0,360);
+for (const [stop,alpha] of [[0,0],[.14,.4],[.34,1],[.85,1],[1,0]]) {
+  edgeMask.addColorStop(stop,'rgba(0,0,0,' + alpha + ')');
+}
+let sceneView = {height:360, top:0};
+let fieldCameraY = 0;
+let battleStageBottom = 280;
+
+function portraitBackdrop() {
+  const chapter = chapterOf(player.x);
+  if (battle) return picture('arena-' + battle.arena);
+  if (mode === 'home') return picture('story-1');
+  if (mode === 'title') return picture('land-0');
+  if (innScene) return picture('inn-' + innScene.profile.art);
+  return picture(landscapeImage(chapter,Boolean(interior && ['secret','ruin','regional','trailroom'].includes(interior.site.kind))));
+}
+
+function presentScene() {
+  const height = clamp(Math.round(640 * canvas.clientHeight / Math.max(1,canvas.clientWidth)), 240, 1600);
+  if (canvas.height !== height) canvas.height = height;
+  const extra = height-360;
+  const top = Math.round(extra >= 0 ? extra * .49 : extra / 2);
+  sceneView = {height,top};
+  screen.imageSmoothingEnabled = artQuality !== 'low';
+  if (extra <= 36) {
+    screen.drawImage(scene,0,0,640,height);
+    sceneView.top = 0;
+    sceneView.scaleY = height / 360;
+    return;
+  }
+  const background = portraitBackdrop();
+  screen.fillStyle = interior ? '#292338' : '#35434e';
+  screen.fillRect(0,0,640,height);
+  if (background) coverArt(screen,background,0,0,640,height);
+  const haze = screen.createLinearGradient(0,0,0,height);
+  haze.addColorStop(0,'#1d26334a');
+  haze.addColorStop(.52,'#1f26355e');
+  haze.addColorStop(1,'#161928ba');
+  screen.fillStyle = haze;
+  screen.fillRect(0,0,640,height);
+  if (mode === 'title' || mode === 'home') return;
+  blend.globalCompositeOperation = 'copy';
+  blend.drawImage(scene,0,0);
+  blend.globalCompositeOperation = 'destination-in';
+  blend.fillStyle = edgeMask;
+  blend.fillRect(0,0,640,360);
+  screen.drawImage(sceneBlend,0,top);
+}
+
+function canvasPoint(clientX,clientY) {
+  const bounds = canvas.getBoundingClientRect();
+  const {height,top,scaleY = 1} = sceneView;
+  const y = ((clientY-bounds.top)*height/bounds.height - top) / scaleY;
+  return {x:(clientX-bounds.left)*640/bounds.width,y};
+}
+new ResizeObserver(() => {
+  battleStageBottom = canvasPoint(0,$('battle-commands').getBoundingClientRect().top).y - 12;
+}).observe($('battle-commands'));
+
 const palettes = [
   ['#486352', '#ce89a3'], ['#263f4a', '#638690'], ['#315670', '#80a6b9'],
   ['#373449', '#9d8ac8'], ['#565567', '#a0a9bf'], ['#504451', '#ba875e'],
@@ -66,8 +133,7 @@ function actionSprite(x,y,scale,face,frame) {
 function hero(x, y, scale, face) {
   const moving = gait === 'walk' || gait === 'run';
   const pose = !player.hp ? 8 : clock < flashUntil ? 5 : clock < swingUntil ? 3 :
-    glow && clock < glow.until ? 6 : jumpHeight > 2 ? 2 :
-    battle && (pressed('guard') || clock < invulnerableUntil) ? 4 : clock < victoryUntil ? 7 :
+    jumpHeight > 2 ? 2 : pressed('guard') ? 4 : clock < victoryUntil ? 7 :
     moving ? 1 + Math.floor(clock * 10) % 2 : 0;
   const frame = !player.hp || clock < flashUntil || clock < swingUntil ? -1 :
     gait === 'dash' ? 10 : wallKickUntil > clock ? 5 : climbing ? 7 + Math.floor(clock * 9) % 2 :
@@ -77,8 +143,8 @@ function hero(x, y, scale, face) {
     chargeStarted !== null && clock - chargeStarted >= .58 ? 11 :
     gait === 'run' ? Math.floor(clock * 17) % 2 : -1;
   if (frame < 0 || !actionSprite(x,y,scale,face,frame)) drawActor('一美', x, y, scale, face, pose);
-  if (player.armor || regionalGear.armor !== null || trialGear.armor !== null) {
-    const metal = regionalGear.armor !== null ? prefectures[regionalGear.armor].color :
+  if (stoneArmor || player.armor || regionalGear.armor !== null || trialGear.armor !== null) {
+    const metal = stoneArmor ? '#dbb878' : regionalGear.armor !== null ? prefectures[regionalGear.armor].color :
       ['#817967','#b39571','#8eb2b9','#beadd1'][player.armor];
     const direction = face < 0 ? -1 : 1;
     if (pose !== 8) {
@@ -90,18 +156,13 @@ function hero(x, y, scale, face) {
 }
 
 function drawCompanion(name, x, y, scale, face, motion = 0, hit = false) {
-  const member = currentCompanion();
-  const active = battle && member?.name === name && Math.abs(x - battle.allyX) < 14;
-  const action = active && battle.allyAction?.until > clock ? battle.allyAction.kind : '';
-  const pose = active && !member.hp ? 8 : hit ? 5 : active && battle.allyGuard > clock ? 4 :
-    action === 'magic' || action === 'heal' ? 6 : action === 'attack' ? 3 :
-    active && battle.allyDodge > clock ? 2 : motion !== 0 ? 1 + Math.floor(clock * 9) % 2 : 0;
+  const pose = hit ? 5 : motion ? 1 + Math.floor(clock * 9) % 2 : 0;
   drawActor(name, x, y, scale, face, pose);
 }
 
 function drawCat(x, y, scale, formIndex = 0) {
   const sheet = picture('soso');
-  const active = battle?.catEffect?.until > clock;
+  const active = battle?.command?.action?.actor.id === 'cat' || battle?.command?.catGlowUntil > clock;
   const frame = battle && !cat.hp ? 3 : active ? 1 :
     reducedMotion.matches ? 0 : Math.floor(clock * 7) % 3;
   groundShadow(x, y + 2, 10 * scale, 3 * scale);
@@ -113,7 +174,7 @@ function drawCat(x, y, scale, formIndex = 0) {
   ctx.restore();
 }
 
-function monster(enemy, x, y, scale) {
+function monster(enemy, x, y, scale, commandPose) {
   const variant = enemy.variant ?? enemy.trial ?? 0;
   const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
   const featured = enemy.trial !== undefined ? 3 : enemy.rank === 'major' && enemy.chapter === 9 ? 0 :
@@ -124,28 +185,30 @@ function monster(enemy, x, y, scale) {
   const size = 56 * scale;
   const large = Math.min(125, size * .35 * body.width);
   groundShadow(x, y + 1, large, Math.min(27, size * .075));
-  const engaged = battle?.enemy === enemy;
+  const facing = commandPose?.face ?? enemy.fieldFacing?.x ?? (enemy.x < player.x ? 1 : -1);
   if (!enemy.boss && body.motion === 'duel') {
-    const pose = engaged && battle.enemyHit > clock ? 5 : engaged && battle.strike ? 3 :
-      1 + Math.floor(clock * 9) % 2;
-    drawActor('守衛',x,y,scale,engaged ? battle.enemyFacing.x : -1,pose);
+    const pose = commandPose?.pose ?? 1 + Math.floor(clock * 9) % 2;
+    drawActor('守衛',x,y,scale,facing,pose);
     return;
   }
   const image = enemy.trial !== undefined ? picture('emperor-' + enemy.trial) :
     featured === null ? picture('enemy-' + sprite) : picture('boss-' + featured);
   if (!image) return;
   ctx.save();
-  const attack = engaged && battle.strike;
-  const facing = engaged ? battle.enemyFacing.x : enemy.x < player.x ? 1 : -1;
-  const flinch = engaged && battle.enemyHit > clock ? -Math.sign(facing) * 5 : 0;
+  const attack = commandPose?.pose === 3;
+  const flinch = commandPose?.pose === 5 ? -Math.sign(facing) * 5 : 0;
   const lift = body.motion === 'float' ? -5 : 0;
   ctx.translate(x + flinch, y + bob + lift);
   if (attack && body.motion === 'stomp') ctx.scale(1.06, .94);
   if (attack && ['duel','charge'].includes(body.motion)) {
-    ctx.rotate(-Math.sign(attack.direction.x) * (body.motion === 'charge' ? .15 : .07));
+    ctx.rotate(-Math.sign(facing) * (body.motion === 'charge' ? .15 : .07));
   }
   if (facing > .1 && body.motion !== 'float') ctx.scale(-1, 1);
-  if (clock < enemy.flash && artQuality === 'high') ctx.filter = 'brightness(1.6)';
+  if (commandPose?.pose === 8) {
+    ctx.globalAlpha *= .35;
+    ctx.scale(.88,.72);
+  }
+  if ((commandPose?.pose === 5 || clock < enemy.flash) && artQuality === 'high') ctx.filter = 'brightness(1.6)';
   else if (enemy.boss && featured === null && artQuality !== 'low') ctx.filter = 'hue-rotate(' + (enemy.chapter * 17 % 140) + 'deg)';
   ctx.imageSmoothingEnabled = artQuality !== 'low';
   ctx.drawImage(image, -size * body.width / 2, -size * .95, size * body.width, size);
@@ -394,11 +457,11 @@ function drawRoomDetail(kind, x, y) {
 }
 
 function drawRunningDust(camera = 0) {
-  if (!runDust || clock >= runDust.until || runDust.battle !== battle || runDust.interior !== interior ||
+  if (!runDust || clock >= runDust.until || runDust.interior !== interior ||
       artQuality === 'low' || reducedMotion.matches) return;
   const t = 1 - (runDust.until - clock) / .24;
-  const x = battle || interior ? runDust.x : runDust.x - camera;
-  const y = battle ? battleDepth(runDust.y) : interior ? runDust.y : fieldY(runDust.x,runDust.y);
+  const x = interior ? runDust.x : runDust.x - camera;
+  const y = interior ? runDust.y : fieldY(runDust.x,runDust.y);
   ctx.save();
   ctx.globalAlpha = .5 * (1 - t);
   ctx.fillStyle = '#e0c59b';
@@ -417,7 +480,7 @@ function drawInterior() {
   const [facility, keeper, , , color] = townTypes[site.kind];
   const name = site.kind === 'regional' ? prefectures[site.chapter].dungeon : facility;
   rect(0, 0, 640, 360, '#202437');
-  const cave = ['secret','ruin','regional'].includes(site.kind);
+  const cave = ['secret','ruin','regional','trailroom'].includes(site.kind);
   if (cave) landscapeArt(ctx, site.chapter, 0, true);
   rect(38, 45, 564, 271, cave ? '#4b456887' : '#58465a');
   rect(50, 79, 540, 225, cave ? '#57546a97' : '#86694f');
@@ -427,7 +490,7 @@ function drawInterior() {
   }
   rect(226, 154, 188, 91, color);
   rect(232, 160, 176, 79, '#c49d8333');
-  if (!['secret','ruin','regional'].includes(site.kind)) {
+  if (!['secret','ruin','regional','trailroom'].includes(site.kind)) {
     for (const wx of [122, 484]) {
       rect(wx, 56, 31, 18, '#282b42');
       rect(wx + 3, 58, 25, 13, townNight() ? '#ffc670' : '#a2c4cb');
@@ -464,8 +527,8 @@ function drawInterior() {
     lightAt(ctx, 320, 100, 68, '#98a6ef70');
     diamond(320, 100, 16, 23, prefectures[site.chapter].color);
     label('守り石', 320, 76, '#e8d5b9', 12);
-  } else if (site.kind === 'secret') {
-    rect(301, 88, 38, 20, site.seal.solved ? '#999182' : '#ba8664');
+  } else if (site.kind === 'secret' || site.kind === 'trailroom') {
+    rect(301, 88, 38, 20, (site.kind === 'secret' ? site.seal.solved : stageClaims.has(site.chapter)) ? '#999182' : '#ba8664');
     rect(303, 96, 34, 3, '#685171');
     diamond(320, 99, 4, 5, '#ffda8a');
   } else {
@@ -477,6 +540,113 @@ function drawInterior() {
   if (companion) drawCompanion(companion.name, clamp(x - 30, 47, 593), y + 8, .9, player.facing.x);
   drawRunningDust();
   hero(x, y-jumpHeight, 1.1, player.facing.x);
+}
+
+function drawStage(path, camera) {
+  const {chapter, prop, trap, rune, cache} = path;
+  const scroll = mark => ({x:mark.x-camera,y:fieldY(mark.x,mark.y)});
+  const material = scroll(prop);
+  if (!cutStageProps.has(chapter) && material.x >= -30 && material.x <= 670) {
+    const {x,y} = material, {width,height,color} = prop;
+    groundShadow(x,y+1,width+2,4);
+    if (prop.kind === 'grass' || prop.kind === 'vine') {
+      for (let i = -1; i < 2; i++) {
+        ctx.strokeStyle = i === 0 ? color : '#92ad83';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x+i*4,y);
+        ctx.quadraticCurveTo(x+i*12,y-height*.7,x+i*3,y-height-4);
+        ctx.stroke();
+      }
+    } else if (prop.kind === 'rope') {
+      rect(x-12,y-height-3,24,4,'#866750');
+      rect(x-2,y-height,4,height-10,color);
+      diamond(x,y-11,4,4,'#d9bb91');
+    } else {
+      rect(x-width,y-height,width*2,height,color);
+      rect(x-width,y-height,width*2,3,'#e7c8a273');
+      rect(x-width,y-height*.3,width*2,2,'#4f3d46');
+      if (prop.kind === 'wall') {
+        polygon([[x,y-height],[x-4,y-height*.65],[x+4,y-height*.55],[x-2,y-2],[x+1,y-height*.59],[x-5,y-height*.64]],'#4c4158');
+      } else if (prop.kind === 'crate') polygon([[x-width,y-height],[x+width,y-2],[x+width,y-5],[x-width,y-height+3]],'#e2af77');
+      else if (prop.kind === 'switch') diamond(x,y-height,6,4,'#d7eff2');
+    }
+  }
+  const base = scroll(trap);
+  if (base.x > -75 && base.x < 715) {
+    const {x,y} = base, left = x-trap.width, width = trap.width*2;
+    if (trap.kind === 'spikes') {
+      rect(left,y-4,width,6,'#484158');
+      for (let i=0;i<6;i++) polygon([[left+i*8,y-4],[left+i*8+3,y-13],[left+i*8+7,y-4]],'#b0bacd');
+    } else if (['lava','ice','quicksand','pit','crumble'].includes(trap.kind)) {
+      const tones = {lava:['#872e41','#ef884c'], ice:['#6393a6','#c3e9ff'], quicksand:['#806047','#cd9a65'],
+        pit:['#292039','#47384b'], crumble:['#382a3f','#978166']}[trap.kind];
+      rect(left,y-trap.depth,width,trap.depth*2,tones[0]);
+      for (let i=0;i<4;i++) rect(left+i*11,y-6+(i%3)*5,9,2,tones[1]);
+      if (trap.kind === 'lava') lightAt(ctx,x,y,35,'#ff763055');
+    } else {
+      const danger = stageHazardPose(trap);
+      const {x:rockX, y:rockY} = scroll(danger);
+      if (danger.active && trap.kind === 'falling') lightAt(ctx,x,y,20,'#ff9d6858');
+      if (trap.kind === 'swing') {
+        ctx.strokeStyle='#7b6b66'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(x,y-61); ctx.lineTo(rockX,rockY-danger.height); ctx.stroke();
+      }
+      groundShadow(rockX,rockY,12,3);
+      const lifted = rockY-danger.height;
+      polygon([[rockX-11,lifted],[rockX-9,lifted-10],[rockX+2,lifted-17],[rockX+10,lifted-7],[rockX+8,lifted+2]],'#726c78');
+      polygon([[rockX-9,lifted-10],[rockX+2,lifted-17],[rockX+5,lifted-10],[rockX-2,lifted-5]],'#9f908f');
+    }
+    if (closeTo(trap.x,trap.y,36)) label(hazardNames[trap.kind],x,y-23,'#ffe1af',11);
+  }
+  const mark = scroll(rune);
+  const active = activatedRunes.has(chapter);
+  if (mark.x > -28 && mark.x < 668) {
+    const {x,y} = mark;
+    if (!active && rune.spell.id === 'fire') polygon([[x-15,y],[x-10,y-22],[x-1,y-30],[x+12,y-21],[x+15,y]],'#85a9cb');
+    if (!active && rune.spell.id === 'frost') rect(x-13,y-8,26,17,'#5995bca8');
+    lightAt(ctx,x,y-7,active ? 29 : 16,rune.spell.color+'8a');
+    diamond(x,y-9,6,8,rune.spell.color);
+    if (active && rune.spell.id === 'wind') {
+      for (let i=0;i<4;i++) {
+        const drift = (clock*33 + i*17) % 61;
+        diamond(x + Math.sin(clock+i)*11,y-drift,3,2,rune.spell.color);
+      }
+    }
+    if (!active && closeTo(rune.x,rune.y,42)) label(rune.spell.name,x,y-37,rune.spell.color,11);
+  }
+  const shelf = stageSurface(path);
+  if (shelf) {
+    const {x,y} = scroll(shelf);
+    if (x > -34 && x < 674) {
+      const tone = shelf.stage === 'crumble' && stageCrumbles ? '#b48872' :
+        shelf.stage === 'frost' ? '#a7ddf2' : '#ad9774';
+      groundShadow(x,y,shelf.width,4);
+      rect(x-shelf.width,y-shelf.height,shelf.width*2,6,tone);
+      rect(x-shelf.width,y-shelf.height-2,shelf.width*2,2,'#e7dbc2');
+    }
+  }
+  if (active && path.refuge) {
+    const {x,y} = scroll(cache);
+    lightAt(ctx,x,y-18,25,'#f3d49f83');
+    polygon([[x-17,y+2],[x-14,y-18],[x-6,y-25],[x+12,y-24],[x+18,y+2]],'#746878');
+    polygon([[x-10,y],[x-8,y-15],[x,y-20],[x+8,y-15],[x+11,y]],'#28243e');
+    label('灯の抜け道',x,y-31,'#f7ddab',11);
+  } else if (active && !stageClaims.has(chapter)) {
+    const {x,y} = scroll(cache);
+    const py = y-(['wind','earth','thunder'].includes(rune.spell.id) ? 15 : 0);
+    lightAt(ctx,x,py-5,19,'#ffd772a8');
+    rect(x-9,py-12,18,12,'#8e5838');
+    rect(x-9,py-8,18,2,'#c99c51');
+    rect(x-2,py-7,4,4,'#ffe2a1');
+  }
+  if (stageMagicEffect?.until > clock) {
+    const {x,y} = scroll(stageMagicEffect);
+    const size = 11 + (.78-(stageMagicEffect.until-clock))*51;
+    lightAt(ctx,x,y-12,size,stageMagicEffect.color+'90');
+    ctx.strokeStyle = stageMagicEffect.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(x,y-12,size,size*.48,0,0,2*Math.PI); ctx.stroke();
+  }
 }
 
 function drawField(chapter, camera) {
@@ -499,6 +669,8 @@ function drawField(chapter, camera) {
       rect(x, 124 + i * 17 % 38, 10 + i % 5 * 4, 1, '#b1d8d879');
     }
   }
+  ctx.save();
+  ctx.translate(0,-fieldCameraY);
   const layout = fieldLayouts[chapter], season = seasonIndex();
   const ridge = [];
   for (let x = -15; x <= 670; x += 19) {
@@ -567,6 +739,7 @@ function drawField(chapter, camera) {
   ageLight(ctx);
   drawTown(chapter,camera);
   drawPlatforms(chapter,camera);
+  drawStage(stagePaths[chapter],camera);
   if (tourBook[chapter]?.photo) {
     const portal = townSites.get('regional-' + chapter);
     const x = portal.x-camera, y = fieldY(portal.x,portal.row);
@@ -605,11 +778,9 @@ function drawField(chapter, camera) {
     drawCompanion(npc.name, npc.x - camera, fieldY(npc.x,104), .8, 1);
     label(npc.name, npc.x - camera, fieldY(npc.x,104) - 34);
   }
-  for (const shrine of shrines) {
-    if (Math.abs(shrine.x - player.x) > 640) continue;
-    const x = shrine.x - camera, y = fieldY(shrine.x,shrine.row) - 4;
-    rect(x - 12, y - 20, 24, 25, '#4b375c');
-    diamond(x, y - 10, 7, 10, shrine.solved ? '#efcd84' : '#9d7897');
+  for (const stone of waysideStones) {
+    if (Math.abs(stone.x - player.x) > 640) continue;
+    drawWaysideStone(stone,camera);
   }
   for (const enemy of activeEnemies(chapter)) {
     if (!enemy.hp || !unlocked(enemy)) continue;
@@ -632,7 +803,7 @@ function drawField(chapter, camera) {
   }
   const x = player.x - camera, y = fieldY(player.x,player.y) - jumpHeight;
   const member = currentCompanion();
-  if (member) drawCompanion(member.name, companionTrail.x - camera, fieldY(companionTrail.x,companionTrail.y), .9,
+  if (member) drawCompanion(member.name, companionTrail.x - camera, fieldY(companionTrail.x,companionTrail.y) - (companionTrail.height ?? 0), .9,
     Math.sign(player.x - companionTrail.x), Math.sin(clock * 15) * 1.8);
   if (joined) drawCat(cat.x - camera, fieldY(cat.x,cat.y), .8);
   if (jumpHeight) rect(x - 7, fieldY(player.x,player.y) + 2, 14, 3, '#292735');
@@ -666,11 +837,10 @@ function drawField(chapter, camera) {
     polygon([[x, y - 9], [x + dx * 31 - dy * 10, y - 9 + dy * 31 + dx * 10],
       [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], swingKind === 'charged' ? '#eaa4ff' : swingKind === 'combo' ? '#d9f7ff' : swingKind === 'air' ? '#95dfff' : '#fff1be');
   }
+  ctx.restore();
 }
 
-function slashArc(x, y, face, distance) {
-  if (artQuality === 'low') return;
-  const progress = clamp(1 - (swingUntil - clock) * 4, 0, 1);
+function slashArc(x, y, face, distance, progress = clamp(1 - (swingUntil - clock) * 4, 0, 1)) {
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(face < 0 ? -1 : 1, 1);
@@ -679,27 +849,6 @@ function slashArc(x, y, face, distance) {
   ctx.strokeStyle = swingKind === 'air' ? '#a5ddff' : '#fce3a9';
   ctx.beginPath();
   ctx.ellipse(8, 0, distance * .75, 28, .24, -.97 + progress, .54 + progress);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawDanger(strike, impact = false) {
-  ctx.save();
-  ctx.fillStyle = impact ? '#ffbd6461' : '#dc595c4c';
-  ctx.strokeStyle = impact ? '#ffe3a7bc' : '#ff9691c8';
-  ctx.lineWidth = impact ? 3 : 2;
-  const {x,y,range,direction,width} = strike;
-  ctx.beginPath();
-  if (strike.wave) ctx.ellipse(x, battleDepth(y), range, range * .68, 0, 0, Math.PI * 2);
-  else {
-    const side = {x:-direction.y,y:direction.x};
-    ctx.moveTo(x - side.x * width * .7,battleDepth(y - side.y * width * .7));
-    ctx.lineTo(x + side.x * width * .7,battleDepth(y + side.y * width * .7));
-    ctx.lineTo(x + direction.x * range + side.x * width,battleDepth(y + direction.y * range + side.y * width));
-    ctx.lineTo(x + direction.x * range - side.x * width,battleDepth(y + direction.y * range - side.y * width));
-    ctx.closePath();
-  }
-  ctx.fill();
   ctx.stroke();
   ctx.restore();
 }
@@ -722,108 +871,122 @@ function dustAt(event) {
   ctx.restore();
 }
 
-function drawBattle() {
-  const {enemy, body, strike, impact, arena} = battle;
-  const heroPoint = actorPoint('hero'), enemyPoint = actorPoint('enemy');
-  const heroY = battleDepth(heroPoint.y) - jumpHeight;
-  const enemyY = battleDepth(enemyPoint.y);
-  const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
-  drawArenaBackdrop(arena, enemy.chapter);
-  if (enemy.boss && battle.age < 1.25) {
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, battle.age * 6, (1.25 - battle.age) * 3);
-    rect(105, 107, 430, 30, '#111526d9');
-    label(enemy.name, 320, 128, '#ffeac2', 17);
-    ctx.restore();
-  }
-  ctx.save();
-  const shake = !reducedMotion.matches && artQuality !== 'low' && impact?.strong && impact.until > clock ?
-    Math.sin((impact.until - clock) * 56) * Math.min(6, (impact.until - clock) * 19) : 0;
-  ctx.translate(320 + shake, 245);
-  const zoom = arenaZoom();
-  ctx.scale(zoom, zoom);
-  ctx.translate(-320, -245);
-  combatCamera(ctx);
-  if (strike) drawDanger(strike);
-  if (impact?.until > clock && impact.until - clock > .22) drawDanger(impact, true);
-  dustAt(impact);
-  dustAt(battle.stepDust);
-  drawRunningDust();
-  if (enemy.boss) lightAt(ctx, enemyPoint.x, enemyY - 32, 88, phase === 3 ? '#ffc2644e' : '#be8dff45');
+function commandPose(actor, turn) {
+  const action = turn.action;
+  const facing = actor.enemy ? turn.side : -turn.side;
+  const live = commandAlive(actor);
+  const hit = clock < actor.hitUntil;
+  const position = {x:actor.x - (hit ? facing * 5 : 0), y:actor.y, jump:0, face:facing, pose:0};
+  if (!live) position.pose = 8;
+  else if (hit) position.pose = 5;
+  else if (turn.phase === 'victory' && !actor.enemy) position.pose = 7;
+  else if (action?.actor === actor) {
+    const {move,target} = action;
+    const t = clamp((clock - action.start) / action.duration,0,1);
+    const melee = ['strike','combo','leap'].includes(move.motion);
+    const stretch = t < .36 ? t / .36 : t < .64 ? 1 : (1 - t) / .36;
+    if (melee && target && !reducedMotion.matches) {
+      const gap = Math.abs(target.x - actor.x);
+      const standOff = clamp(target.enemy ? combatBody(target.enemy).size * 15 + 21 : 38, 35, gap - 9);
+      const nextX = target.x - position.face * standOff;
+      position.x += (nextX - actor.x) * stretch;
+      position.y += (target.y - actor.y) * stretch;
+      if (move.motion === 'leap') position.jump = Math.max(0, Math.sin(t * Math.PI) * 41);
+    }
+    if (melee) position.pose = t < .31 || t > .73 ? 1 + Math.floor(clock*14) % 2 :
+      move.motion === 'leap' && t < .42 ? 2 : move.motion === 'combo' && Math.floor(t * 20) % 2 ? 2 : 3;
+    else position.pose = move.motion === 'guard' ? 4 : move.motion === 'quake' ? 3 : 6;
+  } else if (actor.guarding) position.pose = 4;
+  return position;
+}
 
-  const actors = [
-    {depth:heroPoint.y, paint:() => {
-      const scale = depthScale(heroPoint.y);
-      if (jumpHeight) groundShadow(heroPoint.x, heroY + jumpHeight, 11, 3);
-      hero(heroPoint.x, heroY, scale, player.facing.x);
-      if (battle.superAwake) lightAt(ctx, heroPoint.x, heroY - 20, 55, '#ffd76985');
-      if (pressed('guard')) diamond(heroPoint.x + player.facing.x * 12,heroY - 20,9,17,'#95d7ddc7');
-      if (clock < swingUntil) {
-        const reach = (equipped('weapon').reach ?? 55) + (swingKind === 'charged' ? bladeForm().chargeReach : 0);
-        const end = {x:heroPoint.x + player.facing.x * reach, y:heroY - 26 + player.facing.y * reach * .68};
-        slashArc(heroPoint.x, heroY - 25, player.facing.x, reach * .76);
-        polygon([[heroPoint.x,heroY - 26],[end.x,end.y - 9],[end.x,end.y + 5]], swingKind === 'air' ? '#9de0ef' : '#ffe5ad');
-      }
-    }},
-    {depth:enemyPoint.y, paint:() => monster(enemy, enemyPoint.x, enemyY, body.size * depthScale(enemyPoint.y))}
-  ];
-  const member = currentCompanion();
-  if (member) {
-    const ally = actorPoint('ally');
-    actors.push({depth:ally.y, paint:() => {
-      const y = battleDepth(ally.y);
-      const direction = Math.sign(enemyPoint.x - ally.x);
-      ctx.save();
-      if (!member.hp) ctx.globalAlpha = .52;
-      drawCompanion(member.name,ally.x,y,depthScale(ally.y),direction,1,battle.allyHit > clock);
-      ctx.restore();
-      if (battle.allyGuard > clock) diamond(ally.x + direction * 9,y - 20,8,13,'#98d5e1');
-      const action = battle.allyAction;
-      if (action?.until > clock) {
-        if (action.kind === 'magic') {
-          ctx.strokeStyle = '#dbc2ff';
-          ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(ally.x,y - 25); ctx.lineTo(enemyPoint.x,enemyY - 36); ctx.stroke();
-        } else if (action.kind === 'heal') diamond(heroPoint.x,heroY - 25,11,20,'#a6e0b1');
-        else slashArc(ally.x,y - 18,direction,34);
-      }
-    }});
+function drawCommandEffect(action, positions) {
+  if (!action) return;
+  const t = clamp((clock - action.start) / action.duration,0,1);
+  const from = positions.get(action.actor);
+  const target = positions.get(action.target) || from;
+  const {motion,element} = action.move;
+  const hue = commandColors[element] || commandColors.無;
+  if (motion === 'guard') {
+    lightAt(ctx,from.x,from.y-24,33,'#9ee6e591');
+    diamond(from.x + from.face * 13,from.y-17,10,17,'#a8eddfb0');
+    return;
   }
-  if (joined) {
-    const p = actorPoint('cat');
-    actors.push({depth:p.y, paint:() => drawCat(p.x,battleDepth(p.y),depthScale(p.y) * (1 + cat.form * .12),cat.form)});
+  if (['magic','heal','limit'].includes(motion)) {
+    const marks = t < .47 ? from : target;
+    const radius = motion === 'limit' ? 49 + t * 40 : 15 + t * 24;
+    lightAt(ctx,marks.x,marks.y-23,radius + 16,(motion === 'heal' ? '#9defb6' : hue) + 'a0');
+    ctx.strokeStyle = motion === 'heal' ? '#a2f1bb' : hue;
+    for (const size of [radius,radius*.67]) {
+      ctx.beginPath();
+      ctx.ellipse(marks.x,marks.y-10,size,size * .26,0,0,2*Math.PI);
+      ctx.stroke();
+    }
+    if (t >= .25 && t <= .68 && motion !== 'heal') {
+      const line = clamp((t - .25) / .22,0,1);
+      ctx.lineWidth = motion === 'limit' ? 6 : 3;
+      ctx.beginPath(); ctx.moveTo(from.x,from.y-33);
+      ctx.lineTo(from.x + (target.x - from.x)*line,from.y-33 + (target.y-from.y)*line);
+      ctx.stroke();
+    }
+    return;
   }
-  actors.sort((a, b) => a.depth - b.depth).forEach(actor => actor.paint());
-
-  const effect = battle.catEffect;
-  if (effect?.until > clock && !reducedMotion.matches) {
-    const x = effect.type === 'strike' ? enemyPoint.x : battle.catX;
-    const y = effect.type === 'strike' ? enemyY - 32 : battleDepth(battle.catY) - 16;
-    const color = catForm().color;
-    const radius = effect.type === 'creation' ? 84 : 25 + cat.form * 4;
-    lightAt(ctx,x,y,radius,color + '70');
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(x,y,radius,radius * .51,0,0,6.283); ctx.stroke();
-    if (effect.type === 'strike') label(cat.form === 5 ? '創世光' : catForm().spell,x,y - 24,color);
+  if (t < .35 || t > .78) return;
+  if (motion === 'quake') {
+    ctx.strokeStyle = '#ffd7a0';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(from.x,from.y,30+170*t,8+23*t,0,0,6.283); ctx.stroke();
+    dustAt({x:from.x,y:(from.y-147)/.68,until:clock+.26});
+    return;
   }
-  if (clock < enemy.flash && artQuality !== 'low') {
+  slashArc(from.x,from.y-from.jump-26,from.face,motion === 'combo' ? 48 : 37,t);
+  if (motion === 'combo') slashArc(from.x+from.face*14,from.y-from.jump-32,from.face,30,t);
+  if (t > .47) {
     for (let i = 0; i < 8; i++) {
       const angle = i * Math.PI / 4;
-      const spread = (enemy.flash - clock) * 115;
-      diamond(enemyPoint.x + Math.cos(angle) * spread, enemyY - 29 + Math.sin(angle) * spread, 2, 3, '#ffdc9a');
+      diamond(target.x + Math.cos(angle) * t * 52,target.y-28 + Math.sin(angle) * t * 42,2,3,hue);
     }
   }
-  drawCinematicEffect(ctx, battle.catX + 10, battleDepth(battle.catY) - 20, cat.form === 5);
-  if (glow && !glow.field && clock < glow.until) {
-    const endX = glow.x + glow.dx * starterRing.reach;
-    const endY = glow.y + glow.dy * starterRing.reach;
-    lightAt(ctx,glow.x,glow.y,42,'#a6d6ff83');
-    ctx.strokeStyle = '#9ee8ff'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(glow.x,glow.y); ctx.lineTo(endX,endY); ctx.stroke();
+}
+
+function drawBattle() {
+  const {command:turn, arena, enemy} = battle;
+  drawArenaBackdrop(arena,enemy.chapter);
+  const group = [...turn.foes, ...turn.allies];
+  const positions = new Map(group.map(actor => [actor,commandPose(actor,turn)]));
+  ctx.save();
+  combatCamera(ctx);
+  const moving = turn.action;
+  const shake = !reducedMotion.matches && moving?.move.motion === 'quake' && moving.hit ?
+    Math.sin((clock - moving.start) * 73) * 4 : 0;
+  const lowest = Math.max(...group.map(actor => actor.y));
+  ctx.translate(shake,Math.min(0,Math.max(154,battleStageBottom)-lowest));
+  const scale = battle.body.size >= 3.5 && battle.body.size < 9 ? .86 : 1;
+  for (const actor of group.sort((a,b) => positions.get(a).y - positions.get(b).y)) {
+    const {x,y,face,pose,jump} = positions.get(actor);
+    const stats = actor.stats();
+    if (actor.enemy) {
+      const size = combatBody(actor.enemy).size * scale;
+      monster(actor.enemy,x,y-jump,size,{face,pose});
+      if (stats.unit.hp) {
+        const labelY = Math.max(49,y - size * 42 - 9);
+        label(actor.name,x,labelY,'#fff0cc',12);
+        rect(x-38,labelY+5,76,4,'#221b35cc');
+        rect(x-38,labelY+5,76*stats.unit.hp/stats.max,4,'#f19186');
+        if (actor.status) label(commandStatusNames[actor.status.type],x,labelY+20,'#d4ecff',10);
+      }
+    } else if (actor.id === 'cat') {
+      drawCat(x,y-jump,(.87 + cat.form * .09) * scale,cat.form);
+      if (turn.catGlowUntil > clock) drawCinematicEffect(ctx,x,y-20,cat.form === 5);
+    } else {
+      if (actor.id === 'hero' && turn.superAwake) lightAt(ctx,x,y-25,57,'#ffe67091');
+      groundShadow(x,y,12,4);
+      drawActor(actor.name,x,y-jump,scale,face,pose);
+    }
   }
+  drawCommandEffect(turn.action,positions);
   for (const number of numbers) {
-    if (!number.field) label(number.text,number.x,number.y - (1 - (number.expires - clock) / .7) * 24,number.color,16);
+    if (!number.field) label(number.text,number.x,number.y - (1-(number.expires-clock)/.7)*24,number.color,16);
   }
   ctx.restore();
 }
@@ -831,15 +994,10 @@ function drawBattle() {
 function drawFireballs(camera) {
   if (!flameBolts.length) return;
   ctx.save();
-  if (battle) {
-    ctx.translate(320,245);
-    ctx.scale(arenaZoom(),arenaZoom());
-    ctx.translate(-320,-245);
-  }
   for (const bolt of flameBolts) {
-    if (bolt.battle !== battle || !battle && bolt.chapter !== chapterOf(player.x)) continue;
-    const x = battle ? bolt.x : bolt.x - camera;
-    const y = (battle ? battleDepth(bolt.y) : fieldY(bolt.x,bolt.y)) - 19 - bolt.height * .54;
+    if (bolt.chapter !== chapterOf(player.x)) continue;
+    const x = bolt.x - camera;
+    const y = fieldY(bolt.x,bolt.y) - 19 - bolt.height * .54;
     lightAt(ctx,x,y,28,'#ff7631a0');
     const dx=bolt.direction.x, dy=bolt.direction.y*.68;
     polygon([[x-dx*20,y-dy*20],[x-dx*9+dy*7,y-dy*9-dx*7],[x+dx*7,y+dy*7],[x-dx*9-dy*7,y-dy*9+dx*7]],'#f38340c7');
@@ -849,14 +1007,59 @@ function drawFireballs(camera) {
   ctx.restore();
 }
 
-function render() {
+function drawWaysideStone(stone, camera) {
+  const x = stone.x - camera, y = fieldY(stone.x, stone.row);
+  const close = closeTo(stone.x, stone.row, 54);
+  const gold = stone.solved;
+  if (gold || close) lightAt(ctx,x,y - 15,30,gold ? '#f7c75d8a' : '#bfddfb70');
+  groundShadow(x,y + 2,17,5);
+  polygon([[x-13,y],[x-10,y-29],[x-3,y-36],[x+10,y-33],[x+15,y-6],[x+11,y+2]], gold ? '#8e6740' : '#393a55');
+  polygon([[x-9,y-4],[x-7,y-28],[x-2,y-32],[x+7,y-29],[x+10,y-5]], gold ? '#d6a766' : '#727b97');
+  rect(x-12,y-5,25,6,gold ? '#aa7f46' : '#4c4d65');
+  diamond(x,y-21,4,7,gold ? '#fff0a4' : close ? '#d6ebff' : '#939fbc');
+  for (let row = 0; row < 2; row++) rect(x-4,y-12+row*3,8,1,gold ? '#fbe7a8' : '#b7bdd4');
+  if (close) label(gold ? '正解済み' : '石碑',x,y-42,gold ? '#fff0aa' : '#e1edff',12);
+  const chest = stone.reward.chest;
+  if (!chest || !stone.rewarded || stone.claimed) return;
+  const cx = chest.x - camera, cy = fieldY(chest.x,chest.row);
+  lightAt(ctx,cx,cy-8,26,'#ffe48786');
+  groundShadow(cx,cy+2,14,4);
+  rect(cx-12,cy-16,24,16,'#594031');
+  rect(cx-10,cy-15,20,7,'#ac663d');
+  rect(cx-11,cy-8,22,8,'#845533');
+  rect(cx-12,cy-9,24,2,'#f1bd68');
+  rect(cx-2,cy-8,4,4,'#ffe59e');
+}
+
+canvas.addEventListener('click', event => {
+  if (!movementAllowed() || mode !== 'field' || interior || innScene) return;
+  const point = canvasPoint(event.clientX,event.clientY);
+  const x = point.x + fieldCamera;
+  const y = point.y + fieldCameraY;
+  for (const stone of waysideStones) {
+    const chest = stone.reward.chest;
+    if (chest && stone.rewarded && !stone.claimed && closeTo(chest.x,chest.row,54) &&
+        Math.abs(chest.x - x) <= 17 && Math.abs(fieldY(chest.x,chest.row) - 8 - y) <= 15) {
+      claimStoneChest(stone);
+      return;
+    }
+    if (closeTo(stone.x,stone.row,54) && Math.abs(stone.x - x) <= 17 &&
+        Math.abs(fieldY(stone.x,stone.row) - 18 - y) <= 24) {
+      inspectStone(stone);
+      return;
+    }
+  }
+});
+
+function renderScene() {
   if (innScene) return drawInnStay();
   if (interior && mode === 'field') return drawInterior();
   const chapter = chapterOf(player.x);
   const camera = fieldCamera;
   if (mode === 'title' || mode === 'home') drawHome();
   else if (battle) drawBattle();
-  else drawField(chapter, camera);
+  else drawField(chapter,camera);
+  if (mode === 'field') ctx.translate(0,-fieldCameraY);
   drawFireballs(camera);
   if (!battle && mode === 'field' && defeatedFoe?.until > clock && defeatedFoe.chapter === chapter) {
     ctx.save();
@@ -881,7 +1084,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   if (!battle && clock < burstUntil && !reducedMotion.matches) {
-    const x = battle ? battle.heroX : player.x - camera;
+    const x = player.x - camera;
     const y = fieldY(player.x,player.y) - 10;
     ctx.globalAlpha = Math.min(.8, (burstUntil - clock) * 2);
     ctx.strokeStyle = '#ffe4a4';
@@ -890,19 +1093,6 @@ function render() {
     ctx.arc(x, y, 18 + (1 - (burstUntil - clock) / .55) * 110, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
-  }
-  if (!battle && glow && clock < glow.until && glow.field) {
-    const x = glow.x - (glow.field ? camera : 0);
-    ctx.strokeStyle = '#9ee8ff';
-    ctx.lineWidth = 4;
-    lightAt(ctx, x, glow.y, 45, '#a6d6ff83');
-    ctx.beginPath();
-    ctx.ellipse(x, glow.y + 13, 22, 8, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, glow.y);
-    ctx.lineTo(x + glow.dx * starterRing.reach, glow.y + glow.dy * starterRing.reach);
-    ctx.stroke();
   }
   for (const number of numbers) {
     if (battle || !number.field) continue;
@@ -923,13 +1113,18 @@ function frame(timestamp) {
   if (!document.hidden) {
     update(elapsed * timeScale);
     advanceInn(elapsed);
-    const target = clamp(player.x - 245,-85,limit - 515);
+    const lookAhead = (player.facing.x || 0) * (gait === 'run' || gait === 'dash' ? 33 : 12);
+    const target = clamp(player.x - 265 + lookAhead,-85,limit - 515);
+    const aimY = mode === 'field' && !interior ? -Math.min(24, jumpHeight * .32) : 0;
+    fieldCameraY = reducedMotion.matches ? 0 : fieldCameraY + (aimY - fieldCameraY) * (1 - Math.exp(-elapsed * 8));
     fieldCamera = Math.abs(fieldCamera - target) > 350 || reducedMotion.matches ?
       target : fieldCamera + (target - fieldCamera) * (1 - Math.exp(-elapsed * 9));
   }
   const frameInterval = artQuality === 'low' ? 47 : artQuality === 'medium' ? 24 : 15;
   if (!document.hidden && timestamp - lastDraw >= frameInterval) {
-    render();
+    ctx.setTransform(1,0,0,1,0,0);
+    renderScene();
+    presentScene();
     lastDraw = timestamp;
   }
   if (timestamp - lastUI > 55) {

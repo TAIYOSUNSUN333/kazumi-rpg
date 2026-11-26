@@ -238,10 +238,6 @@ function drawCinematicEffect(g, x, y, special = false) {
   lightAt(g, x, y, 90, special ? '#ffbc534c' : '#babdf343');
 }
 
-function arenaZoom() {
-  return battle.body.size >= 6 ? .82 : battle.body.size >= 3.5 ? .92 : 1;
-}
-
 function drawArenaBackdrop(kind, chapter) {
   const art = picture('arena-' + kind);
   ctx.fillStyle = '#1c243a';
@@ -280,7 +276,4 @@ function drawArenaBackdrop(kind, chapter) {
   } else if (kind === 'volcano' || kind === 'temple') {
     lightAt(ctx,499,143,134,kind === 'volcano' ? '#f0724e53' : '#ffd78f53');
   }
-  ctx.fillStyle = '#1c21359e';
-  ctx.fillRect(269,12,102,19);
-  label(region.name,320,26,'#efd7a8',11);
 }

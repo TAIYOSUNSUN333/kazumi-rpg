@@ -40,7 +40,6 @@ let jumpHeight = 0;
 let jumpVelocity = 0;
 let jumps = 0;
 let magicAt = 0;
-let glow = null;
 let ring = false;
 let slashBase = null;
 let shotGear = 'star';
@@ -58,17 +57,17 @@ let messageUntil = 0;
 const numbers = [];
 const level = () => 1 + Math.floor(Math.sqrt(player.xp / 25));
 const nextXp = () => level() ** 2 * 25;
-const maxHP = () => 100 + (level() - 1) * 13;
-const maxMP = () => 30 + (level() - 1) * 4;
-const attackPower = () => 10 + (level() - 1) * 3 + equipped('weapon').bonus + (townSeconds < innBuffUntil ? 4 : 0) + (player.party.includes('一郎') ? 2 : 0);
-const defense = () => 5 + (level() - 1) * 2 + equipped('armor').bonus + (player.party.includes('クルミ') ? 1 : 0);
+const maxHP = () => 100 + (level() - 1) * 13 + stoneMaxHP;
+const maxMP = () => 30 + (level() - 1) * 4 + stoneMaxMP;
+const attackPower = () => 10 + (level() - 1) * 3 + equipped('weapon').bonus + (townSeconds < innBuffUntil ? 4 : 0) + (townSeconds < stoneBuffUntil ? 6 : 0) + (player.party.includes('一郎') ? 2 : 0);
+const defense = () => 5 + (level() - 1) * 2 + equipped('armor').bonus + (player.party.includes('クルミ') ? 1 : 0) + (townSeconds < stoneBuffUntil ? 4 : 0);
 function equipped(type) {
+  if (type === 'armor' && stoneArmor) return unlockedStoneArmor(stoneArmor);
   if (type === 'weapon' && slashBase !== null) return equipment.weapon[slashBase];
   return prefectures[regionalGear[type]]?.[type] || trials[trialGear[type]]?.reward || equipment[type][player[type]];
 }
 const activeEnemies = chapter => enemies.slice(chapter * 8, chapter * 8 + 8);
-const unlocked = enemy => !enemy.boss || (shrines[enemy.chapter].solved &&
-  (enemy.rank === 'mid' || activeEnemies(enemy.chapter)[6].hp === 0));
+const unlocked = enemy => !enemy.boss || enemy.rank === 'mid' || activeEnemies(enemy.chapter)[6].hp === 0;
 
 const prefs = storage.read('kazumi-audio');
 audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true);
@@ -77,12 +76,11 @@ audio.setMix(numeric(prefs?.music, 85, 0, 100) / 100, numeric(prefs?.effects, 80
 function save(explicit = false) {
   if (trialVitals) return false;
   const success = storage.write(saveKey, {
-    version: 9, actionEquipment:{slashBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 10, stage:stageSnapshot(), stones:stoneSnapshot(), actionEquipment:{slashBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
-    enemies: enemies.map(enemy => enemy.hp), shrines: shrines.map(shrine => shrine.solved),
-    riddleProgress: shrines.map(shrine => [shrine.questionId ?? null, shrine.wrong ?? 0]), shrineDefeated,
+    enemies: enemies.map(enemy => enemy.hp), shrineDefeated,
     special: Math.max(0, specialAt - clock), joined, returning, done,
     trials: [...clearedTrials], trialGear, ring, pots: pots.map(pot => pot.broken)
   });
@@ -92,9 +90,9 @@ function save(explicit = false) {
 
 function load(data) {
   if (!data || typeof data !== 'object') return;
-  const current = [4, 5, 6, 7, 8, 9].includes(data.version);
-  ring = [5, 6, 7, 8, 9].includes(data.version) && data.ring === true;
-  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8, 9].includes(data.version) && data.pots?.[i] === true; });
+  const current = [4, 5, 6, 7, 8, 9, 10].includes(data.version);
+  ring = [5, 6, 7, 8, 9, 10].includes(data.version) && data.ring === true;
+  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8, 9, 10].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
   player.xp = numeric(data.xp, 0, 0, 1000000);
@@ -102,6 +100,7 @@ function load(data) {
   player.shards = numeric(modern ? data.shards : data.art, 0, 0, 100000);
   player.x = modern || oldMap ? numeric(data.x, 25, 0, limit) : 25;
   player.y = modern || oldMap ? numeric(data.y, 104, fieldTop, fieldBottom) : 104;
+  restoreStage(data.stage);
   if (waterBlocks(player.x, player.y)) player.y = 54;
   if (!data.town?.room && fieldBarrier(player.x,player.y)) player.y = player.y < 104 ? 56 : 146;
   if (Array.isArray(data.trailCaches)) {
@@ -113,7 +112,11 @@ function load(data) {
   player.armor = numeric(data.armor, 0, 0, equipment.armor.length - 1);
   slashBase = Number.isInteger(data.actionEquipment?.slashBase) ?
     clamp(data.actionEquipment.slashBase,0,player.weapon) : null;
-  shotGear = ring && data.actionEquipment?.shotGear === 'ring' ? 'ring' : 'star';
+  loadStones(data);
+  const shot = data.actionEquipment?.shotGear;
+  const savedSpell = routeSpellById.get(shot);
+  shotGear = ring && (shot === 'ring' || savedSpell && data.checkpoint >= savedSpell.chapter) ||
+    stoneMagicLearned && shot === 'moon' ? shot : 'star';
   player.hp = numeric(data.hp, maxHP(), 1, maxHP());
   player.mp = numeric(data.mp, maxMP(), 0, maxMP());
   checkpoint = modern ? numeric(data.checkpoint, chapterOf(player.x), 0, last) : chapterOf(player.x);
@@ -122,15 +125,6 @@ function load(data) {
   }
   gems.forEach((gem, i) => { gem.on = data.gems?.[i] !== false; });
   shrineDefeated = data.shrineDefeated === true;
-  shrines.forEach((shrine, i) => {
-    shrine.solved = data.shrines?.[i] === true;
-    const progress = data.riddleProgress?.[i];
-    const question = riddlesById.get(progress?.[0]);
-    if (question && question.id.startsWith(shrineTier(i) + '-')) {
-      shrine.questionId = question.id;
-      shrine.wrong = numeric(progress[1], 0, 0, 999);
-    }
-  });
   enemies.forEach((enemy, i) => {
     const hp = data.enemies?.[i];
     // Old saves used different HP scales. Preserve kills and the fraction remaining.
@@ -144,7 +138,7 @@ function load(data) {
     }
   });
   joined = current && data.joined === true;
-  returning = data.version === 9 && joined && data.returning === true;
+  returning = [9, 10].includes(data.version) && joined && data.returning === true;
   done = current && returning && data.done === true;
   specialAt = modern ? numeric(Math.ceil(data.special), 0, 0, 15) : 0;
   if (current) {
@@ -168,7 +162,7 @@ function load(data) {
   loadTowns(data.town);
   loadInn(data.inn);
   loadTourism(data.tourism);
-  if (data.version !== 9) {
+  if (![9, 10].includes(data.version)) {
     for (let chapter = 0; chapter <= Math.min(originalFinal, checkpoint); chapter++) tourismFor(chapter).visited = true;
     if (current && data.done && activeEnemies(originalFinal).at(-1).hp === 0) {
       tourismFor(originalFinal).visited = true;
@@ -267,7 +261,7 @@ for (const button of controls) {
       if (!held.delete(event.pointerId)) return;
       if (!pressed(action)) {
         delete button.dataset.held;
-        if (action === 'jump') touchCrouch = false;
+        if (action === 'jump') releaseJump();
         if (action === 'attack') {
           if (type === 'pointerup') endCharge();
           else chargeStarted = null;
@@ -297,7 +291,7 @@ window.addEventListener('keyup', event => {
   const action = keyActions[event.code];
   if (keys.delete(action)) {
     if (action === 'attack' && !pressed('attack')) endCharge();
-    if (action === 'jump' && !pressed('jump')) touchCrouch = false;
+    if (action === 'jump' && !pressed('jump')) releaseJump();
   }
 });
 window.addEventListener('blur', () => clearInput());
@@ -308,7 +302,7 @@ document.addEventListener('keydown', () => audio.unlock(), {once: true, capture:
 
 function fieldTrack() {
   if (interior) return interior.site.kind === 'inn' ? 'innEntry' :
-    interior.site.kind === 'regional' ? 'dungeon' : 'town' + interior.site.chapter;
+    ['regional','trailroom','secret'].includes(interior.site.kind) ? 'dungeon' : 'town' + interior.site.chapter;
   const chapter = chapterOf(player.x);
   if (player.x - chapter * span >= 0 && player.x - chapter * span < 355) return 'town' + chapter;
   return [1, 3, 6, 9, 11].includes(chapter) ? 'dungeon' : 'field';
@@ -343,6 +337,7 @@ function enterField() {
   mode = 'field';
   companionTrail.x = player.x - 24;
   companionTrail.y = player.y;
+  companionTrail.height = 0;
   cat.x = player.x - 18;
   cat.y = player.y;
   audio.setTrack(fieldTrack());
@@ -427,6 +422,20 @@ function settings() {
   reflect();
   $('panel-body').append(sound);
   graphicsSettings();
+  if (document.fullscreenEnabled && $('game').requestFullscreen) {
+    const fullscreen = document.createElement('button');
+    fullscreen.textContent = document.fullscreenElement ? '全画面表示を終了' : '全画面表示';
+    fullscreen.onclick = async () => {
+      try {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else await $('game').requestFullscreen();
+        fullscreen.textContent = document.fullscreenElement ? '全画面表示を終了' : '全画面表示';
+      } catch {
+        fullscreen.textContent = '全画面表示を利用できません';
+      }
+    };
+    $('panel-body').append(fullscreen);
+  }
 }
 function updateAudio(volume, muted) {
   audio.setVolume(volume, muted);
@@ -437,12 +446,11 @@ function openMenu() {
   if (innScene || doorTransition || quizOpen || shrineDefeated) return;
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
-  const actions = [['戻る', resume], ['斬撃・魔法の装備', actionEquipment]];
-
-  if (battle) actions.push(['逃走', escapeBattle], ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()]);
-  else if (interior) actions.push(['保存', () => { save(true); resume(); }], ['施設の案内', servicePanel,
+  const actions = [['戻る', resume]];
+  if (!battle) actions.push(['斬撃・魔法の装備', actionEquipment], ['石碑手帳', stoneJournal]);
+  if (!battle && interior) actions.push(['保存', () => { save(true); resume(); }], ['施設の案内', servicePanel,
     Math.hypot(interior.x - 320, interior.y - 100) > 66]);
-  else actions.push(
+  else if (!battle) actions.push(
     ['全国手帳', travelBook],
     ['観光案内', tourPanel, !nearScenicSpot()],
     ['保存', () => { save(true); resume(); }],
@@ -457,11 +465,17 @@ function openMenu() {
       }
     }]
   );
+  const member = currentCompanion();
   panel('メニュー', [
+    prefectures[chapterOf(player.x)].name + '　' + townTime(),
+    'Lv.' + level() + '　経験値 ' + player.xp + '/' + nextXp() + '（あと' + (nextXp() - player.xp) + '）',
+    player.gold + 'G　攻撃 ' + attackPower() + ' / 防御 ' + defense(),
     '武器 ' + equipped('weapon').name + '　防具 ' + equipped('armor').name,
     '薬草 ' + player.herbs + '　星の欠片 ' + player.shards,
     nearTavern() || battle ? '' : '酒場のある街では建物の扉から入れる。',
-    '仲間 ' + ([...player.party, ...(joined ? ['ソソ'] : [])].join('、') || 'なし')
+    '仲間 ' + ([...player.party, ...(joined ? ['ソソ'] : [])].join('、') || 'なし'),
+    ...(member ? [member.name + ' Lv.' + companionLevel(member) + '　HP ' + member.hp + '/' + companionHP(member) +
+      '　MP ' + member.mp + '/' + companionMP(member)] : [])
   ], actions);
   settings();
 }
@@ -482,6 +496,7 @@ function shop() {
     offers.push([item.name + '　' + item.cost + 'G', () => {
       player.gold -= item.cost;
       player[type]++;
+      if (type === 'armor') stoneArmor = null;
       if (type === 'weapon') slashBase = null;
       trialGear[type] = null;
       regionalGear[type] = null;
@@ -498,11 +513,20 @@ function shop() {
   for (const index of clearedTrials) {
     const trial = trials[index];
     const type = trial.armor ? 'armor' : 'weapon';
-    offers.push([trial.reward.name + 'を装備', () => { trialGear[type] = index; regionalGear[type] = null; if (type === 'weapon') slashBase = null; save(); shop(); }, trialGear[type] === index]);
+    offers.push([trial.reward.name + 'を装備', () => { trialGear[type] = index; regionalGear[type] = null; if (type === 'armor') stoneArmor = null; if (type === 'weapon') slashBase = null; save(); shop(); }, trialGear[type] === index]);
+  }
+  for (const stone of waysideStones) {
+    const item = unlockedStoneArmor(stone.id);
+    if (item) offers.push([item.name + 'を装備', () => {
+      stoneArmor = stone.id;
+      trialGear.armor = regionalGear.armor = null;
+      save();
+      shop();
+    }, stoneArmor === stone.id]);
   }
   for (const type of ['weapon', 'armor']) {
-    if (trialGear[type] !== null || regionalGear[type] !== null) offers.push([equipment[type][player[type]].name + 'に戻す', () => {
-      trialGear[type] = null; regionalGear[type] = null; if (type === 'weapon') slashBase = null; save(); shop();
+    if (type === 'armor' && stoneArmor || trialGear[type] !== null || regionalGear[type] !== null) offers.push([equipment[type][player[type]].name + 'に戻す', () => {
+      trialGear[type] = null; regionalGear[type] = null; if (type === 'armor') stoneArmor = null; if (type === 'weapon') slashBase = null; save(); shop();
     }]);
   }
   panel('装備を整える', [
@@ -520,7 +544,7 @@ function openTrials() {
     player.hp = maxHP();
     player.mp = maxMP();
     specialAt = clock;
-    encounter({...trial, hp: trial.max, flash: 0}, false);
+    encounter({...trial, hp: trial.max, flash: 0});
     resume();
   }])]);
 }
@@ -543,16 +567,15 @@ function guide() {
     return;
   }
   const chapter = chapterOf(player.x);
-  const shrine = shrines[chapter];
+  const edge = (chapter + 1) * span;
   const candidates = [
-    ...gems.filter(gem => gem.on && gem.x > player.x && gem.x < shrine.x),
-    ...npcs.filter(npc => !npc.visited && npc.x > player.x && npc.x < shrine.x).map(npc => ({x: npc.x, row: 104})),
-    ...activeEnemies(chapter).filter(enemy => enemy.hp && !enemy.optional && !enemy.boss &&
-      (shrine.solved || enemy.homeX < shrine.x)).map(enemy => ({x: enemy.x, row: enemy.y}))
+    ...gems.filter(gem => gem.on && gem.x > player.x && gem.x < edge),
+    ...npcs.filter(npc => !npc.visited && npc.x > player.x && npc.x < edge).map(npc => ({x: npc.x, row: 104})),
+    ...activeEnemies(chapter).filter(enemy => enemy.hp && !enemy.optional && !enemy.boss).map(enemy => ({x: enemy.x, row: enemy.y}))
   ].filter(point => point.x > player.x + 5).sort((a, b) => a.x - b.x);
   const [, , , , , , mid, boss] = activeEnemies(chapter);
   const pending = mid.hp ? mid : boss;
-  const target = candidates[0] || (!shrine.solved ? shrine : pending.hp ? {x: pending.x, row: pending.y} : camps[Math.min(last, chapter + 1)]);
+  const target = candidates[0] || (pending.hp ? {x: pending.x, row: pending.y} : camps[Math.min(last, chapter + 1)]);
   destination = {x: target.x, y: target.row};
 }
 
@@ -580,14 +603,15 @@ function openShrine(shrine, chapter, optional) {
     }
     panel(optional?.title ?? '石碑のなぞなぞ', lines, [
       ...riddleChoices(question).map(choice => [choice, () => {
+        if (shrine.solved || !quizOpen) return;
         if (choice === question.answer) {
           shrine.solved = true;
           shrine.wrong = 0;
-          if (!optional) sealEffect = {x: shrine.x, y: shrine.row, until: clock + .9};
           close();
-          audio.play('seal');
-          if (optional) optional.success();
-          else say('正解！ 封印が解除された。' + chapters[chapter][1], 7);
+          if (optional) {
+            audio.play('seal');
+            optional.success();
+          } else grantStoneReward(shrine);
           save();
           return;
         }
@@ -611,7 +635,6 @@ function openShrine(shrine, chapter, optional) {
         show(penalty);
       }]),
       ['あとで解く', () => {
-        if (!optional) player.x = shrine.x - 19;
         close();
         optional?.later();
         save();
@@ -632,19 +655,12 @@ function openShrine(shrine, chapter, optional) {
 function movePlayer(dx, dy, distance) {
   if (interior) return moveInRoom(dx, dy, distance);
   if (!dx && !dy) return;
-  if (battle) {
-    player.facing = directionTo(dx, dy, player.facing);
-    const underBoss = battle.body.size >= 4.5 && (pressed('crouch') || dashMotion);
-    moveArena('hero', dx, dy, distance, underBoss ? [] : [enemyBlocker()]);
-    return;
-  }
   const magnitude = Math.hypot(dx, dy);
   player.facing = {x: dx / magnitude, y: dy / magnitude};
   const chapter = chapterOf(player.x);
   const [, , , , , , mid, boss] = activeEnemies(chapter);
   const gate = mid.hp ? mid : boss;
-  const boundary = returning ? limit : !shrines[chapter].solved ? shrines[chapter].x + 19 :
-    gate.hp ? gate.homeX + 17 : limit;
+  const boundary = !returning && gate.hp ? gate.homeX + 17 : limit;
   const nextX = clamp(player.x + player.facing.x * distance, 0, boundary);
   const nextY = clamp(player.y + player.facing.y * distance, fieldTop, fieldBottom);
   const blockedX = nextX !== player.x && !fieldStepClear(player.x,player.y,nextX,player.y);
@@ -681,6 +697,11 @@ function jump() {
   }
   groundedOn = null;
   audio.play('jump');
+}
+
+function releaseJump() {
+  touchCrouch = false;
+  if (jumpVelocity > 92 && !dashMotion && !climbing && wallKickUntil <= clock) jumpVelocity = 92;
 }
 
 function updateJump(dt) {
@@ -726,29 +747,13 @@ function strikePots(reach, width) {
   }
 }
 
-function castMagic(fireball = false) {
+function castMagic() {
   if (!ring || player.mp < starterRing.mp || clock < magicAt) return;
   magicAt = clock + .55;
   player.mp -= starterRing.mp;
   const damage = Math.max(1, Math.floor(attackPower() * .35));
   audio.play('magic');
-  if (fireball) return launchFireball(damage);
-  glow = {until: clock + .28, field: !battle, x: battle ? battle.heroX : player.x,
-    y: battle ? battleDepth(battle.heroY) - 27 - jumpHeight : fieldY(player.x,player.y) - 14 - jumpHeight,
-    dx: player.facing.x, dy: battle ? player.facing.y * .68 : player.facing.y};
-  if (battle) {
-    const origin = actorPoint('hero');
-    if (aimHitsEnemy(origin, player.facing, starterRing.reach, 19)) {
-      battle.heroPressure = clock + 1.4;
-      positionalHit(origin, damage, 'magic');
-    }
-    return;
-  }
-  const target = activeEnemies(chapterOf(player.x)).filter(enemy => enemy.hp && unlocked(enemy) &&
-    !isFinalBoss(enemy) && aligned(enemy.x, enemy.y, starterRing.reach, 16))
-    .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0];
-  if (target) hurtEnemy(target, damage);
-  strikePots(starterRing.reach, 12);
+  launchFireball(damage);
 }
 
 function swing(charged = false) {
@@ -768,29 +773,16 @@ function swing(charged = false) {
   swingUntil = clock + Math.min(.35, interval * .68);
   swingKind = charged ? 'charged' : finisher ? 'combo' : airborne ? 'air' : level() >= 9 ? 'afterimage' : burden >= 2 ? 'heavy' : 'ground';
   audio.play(charged || finisher ? 'special' : airborne ? 'air' : 'attack');
-  if (battle) {
-    const origin = actorPoint('hero');
-    if (aimHitsEnemy(origin, player.facing, reach, form.width)) {
-      battle.heroPressure = clock + 1.4;
-      const coordinated = joined && battle.link > clock;
-      const damage = coordinated ? power + Math.ceil(catForm().atk * .85) : power;
-      if (coordinated) {
-        battle.link = 0;
-        audio.play('holy');
-        say('連携攻撃・星爪斬！', 1.5);
-      }
-      positionalHit(origin, battle.superAwake ? damage + Math.ceil(battle.enemy.max * .025) : damage,
-        charged ? 'charge' : airborne ? 'air' : 'blade');
-    }
-    return;
-  }
   const chapter = chapterOf(player.x);
   for (const enemy of activeEnemies(chapter)) {
     if (!enemy.hp || !unlocked(enemy) || isFinalBoss(enemy)) continue;
     if (aligned(enemy.x, enemy.y, reach, form.width * .75)) hurtEnemy(enemy, power);
     if (paused) break;
   }
-  if (!paused) strikePots(reach, 13);
+  if (!paused) {
+    strikePots(reach, 13);
+    cutNearbyStageProp(reach,form.width,charged);
+  }
 }
 
 let dodgeAt = 0;
@@ -802,29 +794,17 @@ function dodge() {
 
 function special() {
   if (clock < specialAt || player.mp < 10) return;
-  const targets = battle ? [battle.enemy] : activeEnemies(chapterOf(player.x)).filter(enemy =>
+  const targets = activeEnemies(chapterOf(player.x)).filter(enemy =>
     enemy.hp && unlocked(enemy) && !isFinalBoss(enemy) && Math.hypot(player.x - enemy.x, player.y - enemy.y) <= 105);
   if (!targets.length) return say('近くに敵がいない。');
-  const inBattle = Boolean(battle);
-  if (inBattle) startCinema('impact');
   player.mp -= 10;
   specialAt = clock + 15;
   burstUntil = clock + .55;
   audio.play('special');
-  const combo = Boolean(battle && joined && cat.hp > 0);
-  const ultimate = combo && cat.form === awakening.length - 1 && cat.mp >= 999;
-  if (ultimate) cat.mp -= 999;
-  if (combo) {
-    battle.catEffect = {until: clock + .9, type: ultimate ? 'creation' : 'holy'};
-    audio.play(ultimate ? 'creation' : 'holy');
-  }
-  say(ultimate ? '協力究極必殺技・天地創生！' : combo ? '協力必殺技・双星の誓い！' : 'ソソを思う！');
+  say('ソソを思う！');
   for (const enemy of targets) {
     const power = attackPower() * 5 + 30 + Math.min(player.shards, 36);
-    const damage = combo ? power + catForm().atk * (ultimate ? 4 : 2) :
-      enemy.boss ? Math.min(Math.ceil(enemy.max * .65), power) : enemy.hp;
-    hurtEnemy(enemy, damage);
-    if (inBattle) break;
+    hurtEnemy(enemy, enemy.boss ? Math.min(Math.ceil(enemy.max * .65), power) : enemy.hp);
   }
   save();
 }
@@ -832,30 +812,14 @@ function special() {
 function addNumber(text, x, y, color, field = false) {
   numbers.push({text: String(text), x, y, color, field, expires: clock + .7});
 }
-function hurtEnemy(enemy, damage, position = '') {
-  if (isFinalBoss(enemy)) {
-    const boundary = Math.ceil(enemy.max * (3 - finalPhase(enemy)) / 3);
-    enemy.hp = Math.max(boundary, enemy.hp - damage);
-    if (boundary && enemy.hp === boundary && battle) {
-      battle.pattern = 0;
-      battle.body = combatBody(enemy);
-      battle.strike = null;
-      battle.next = clock + 1.15;
-      burstUntil = clock + .55;
-      audio.play('encounter');
-      say(enemy.name + 'が変身した。第' + finalPhase(enemy) + '形態！', 3);
-    }
-  } else enemy.hp = Math.max(0, enemy.hp - damage);
+function hurtEnemy(enemy, damage) {
+  const boundary = isFinalBoss(enemy) ? Math.ceil(enemy.max * (3 - finalPhase(enemy)) / 3) : 0;
+  enemy.hp = Math.max(boundary, enemy.hp - damage);
   enemy.flash = clock + .16;
-  if (battle) {
-    addNumber(position ? position + ' ' + damage : damage, battle.enemyX, battleDepth(battle.enemyY) - 53, '#fff29a');
-    battle.enemyHit = clock + .20;
-  }
-  else addNumber(damage, enemy.x, enemy.y - 14, '#fff29a', true);
+  if (!battle) addNumber(damage, enemy.x, enemy.y - 14, '#fff29a', true);
   if (enemy.hp) return;
   if (battle) {
-    defeatedFoe = {enemy, x:battle.enemyX, y:battleDepth(battle.enemyY), scale:battle.body.size * depthScale(battle.enemyY),
-      until:clock + .67, chapter:chapterOf(player.x)};
+    defeatedFoe = {enemy, scale:battle.body.size, until:clock + .67, chapter:chapterOf(player.x)};
   }
   monsterDex.add(enemy.name);
   victoryUntil = clock + 1.1;
@@ -881,8 +845,9 @@ function hurtEnemy(enemy, damage, position = '') {
     return;
   }
   const oldLevel = level();
-  const xp = (enemy.boss ? 44 : 7) + enemy.chapter * (enemy.boss ? 4 : 2);
-  const gold = (enemy.boss ? 32 : 6) + enemy.chapter;
+  const reinforcementsDefeated = (battle?.command.foes.length ?? 1) - 1;
+  const xp = (enemy.boss ? 44 : 7) + enemy.chapter * (enemy.boss ? 4 : 2) + reinforcementsDefeated * (4 + enemy.chapter);
+  const gold = (enemy.boss ? 32 : 6) + enemy.chapter + reinforcementsDefeated * (3 + Math.floor(enemy.chapter / 2));
   player.xp += xp;
   awardCompanion(xp);
   player.gold += gold;
@@ -916,7 +881,7 @@ function hurtEnemy(enemy, damage, position = '') {
     panel('第10章クリア・ソソが仲間になった', [
       '「気まぐれで私の膝に乗っただけの猫だと思った」アウレリオは檻の鍵を落とした。「だが、あの力を見て、連れ去ることにした」',
       '世界最強のソソは、一美の足もとでおなかを見せた。けれど空の亀裂を見ると、毛を逆立てて一美の隣に並んだ。',
-      'ソソは戦闘中に自分で攻撃し、時間が経つと覚醒する。必殺技で二人の力を合わせよう。'
+      'ソソの行動は戦闘中に選べる。ターンが進むと覚醒し、必殺技で二人の力を合わせられる。'
     ], [['一緒に行こう', resume]]);
   }
   if (enemy.rank === 'major' && enemy.chapter === originalFinal) {
@@ -933,22 +898,6 @@ function hurtEnemy(enemy, damage, position = '') {
     ], [['自宅へ向かう', () => { guide(); resume(); }], ['歩いて帰る', resume]]);
   }
   save();
-}
-
-function hurtPlayer(power, strike) {
-  if (clock < invulnerableUntil) return;
-  const guarding = joined && cat.hp > 0 && player.hp <= maxHP() * .3 && arenaDistance(actorPoint('cat'), actorPoint('hero')) < 32;
-  const facing = strike && directionTo(strike.x - battle.heroX, strike.y - battle.heroY);
-  const blocked = pressed('guard') && (!strike || facing.x * player.facing.x + facing.y * player.facing.y >= -.18);
-  const damage = Math.max(1, Math.ceil((power - defense()) * (guarding ? .5 : 1) * (blocked ? .36 : 1)));
-  player.hp = Math.max(0, player.hp - damage);
-  flashUntil = clock + .2;
-  invulnerableUntil = clock + .22;
-  audio.play('hit');
-  if (strike?.kind === 'stomp' && !blocked) footingUntil = clock + 65;
-  if (strike && !blocked) moveArena('hero', -facing.x, -facing.y, battle.body.size > 3 ? 18 : 9, [enemyBlocker()]);
-  addNumber(blocked ? '防御 ' + damage : damage, battle.heroX, battleDepth(battle.heroY) - 48, '#ff9a9a');
-  if (!player.hp) defeat('一美は倒れた');
 }
 
 function defeat(title, detail = '呼びかけても返事はなく、足もとの光が静かに消えた。') {
@@ -978,15 +927,14 @@ function defeat(title, detail = '呼びかけても返事はなく、足もと�
   ]);
 }
 
-function encounter(enemy, ambush) {
+function encounter(enemy, approach = 'normal') {
   battleCinema = null;
   flameBolts = [];
   destination = null;
-  clearInput(true);
+  clearInput();
   resetCat();
   resetJump();
-  glow = null;
-  battle = createBattle(enemy, ambush);
+  battle = createBattle(enemy);
   defeatedFoe = null;
   mode = 'battle';
   player.facing = {x: 1, y: 0};
@@ -994,9 +942,14 @@ function encounter(enemy, ambush) {
   bladeChain = chainUntil = 0;
   invulnerableUntil = clock;
   audio.play('encounter');
+  setEncounterTrack(enemy);
+  say('');
+  startCommandBattle(enemy, approach);
+}
+
+function setEncounterTrack(enemy) {
   audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
     enemy.rank === 'mid' ? 'midboss' : enemy.boss ? 'boss' : 'battle');
-  say(ambush ? '背後から接触された！ 敵の先制攻撃。' : enemy.name + 'と遭遇した。');
 }
 
 function escapeBattle() {
@@ -1006,11 +959,8 @@ function escapeBattle() {
     say('試練から離脱した。');
     return;
   }
-  const enemy = battle.enemy;
-  const left = player.x <= enemy.x;
-  player.x = clamp(enemy.x + (left ? -67 : 67), enemy.chapter * span, (enemy.chapter + 1) * span - 1);
-  if (enemy.boss) player.x = Math.min(player.x, enemy.homeX - 55);
-  player.y = enemy.y < 104 ? 146 : 62;
+  if (!battle) return;
+  ({x:player.x, y:player.y} = battle.entry);
   battle = null;
   resetCat();
   numbers.splice(0);
@@ -1031,131 +981,6 @@ function finalPhase(enemy) {
   return enemy.hp <= Math.ceil(enemy.max * 2 / 3) ? 2 : 1;
 }
 
-function updateCat(dt) {
-  const next = awakening[cat.form + 1];
-  if (next && battle.age - battle.awakeSince + 1e-8 >= next.turn * 5) {
-    const previous = catForm();
-    cat.hp = Math.round(cat.hp * next.hp / previous.hp);
-    cat.mp = Math.round(cat.mp * next.mp / previous.mp);
-    cat.form++;
-    battle.catEffect = {until: clock + 1.1, type: 'awakening'};
-    audio.play('awake' + cat.form);
-    say('ソソが第' + (cat.form + 1) + '形態・' + next.name + 'に覚醒！', 3);
-    if (cat.form === 5) {
-      audio.setTrack('genesis');
-      startCinema('awakening');
-    }
-  }
-  if (battle.burn && clock >= battle.burn.at) {
-    const damage = battle.burn.damage;
-    battle.burn = null;
-    hurtEnemy(battle.enemy, damage);
-    if (!battle || paused) return;
-  }
-  if (!cat.hp) return;
-  const form = catForm();
-  const reach = [25, 38, 42, 46, 110, 150][cat.form] + battle.body.radius;
-  if (battle.strike && battle.strike.at - clock < .22 && clock >= battle.catDefenseAt &&
-      strikeContains(battle.strike, actorPoint('cat'), arenaCat.radius)) {
-    battle.catDefenseAt = clock + 3.6;
-    battle.catDodge = clock + .30;
-    retreatFromStrike('cat', 36);
-    return;
-  }
-  if (clock < battle.catDodge) return;
-  if (player.hp <= maxHP() * .3) {
-    const hero = actorPoint('hero'), me = actorPoint('cat');
-    const guard = directionTo(battle.enemyX - hero.x, battle.enemyY - hero.y);
-    moveArena('cat', hero.x + guard.x * 15 - me.x, hero.y + guard.y * 15 - me.y, form.speed * dt, [enemyBlocker()]);
-    if (arenaDistance(actorPoint('cat'), actorPoint('enemy')) > reach) return;
-  } else if (!closeOnEnemy('cat', dt, form.speed * .71, reach, true)) return;
-  if (clock < battle.catNext) return;
-  const holy = ++battle.catStrikes % 4 === 0 && cat.mp >= 80;
-  if (holy) {
-    cat.mp -= 80;
-    cat.hp = Math.min(form.hp, cat.hp + Math.ceil(form.hp * .1));
-    player.hp = Math.min(maxHP(), player.hp + 12);
-    audio.play('holy');
-    say('ソソの神聖魔法・星祈。ふたりのHPが回復！', 1.4);
-  }
-  battle.catEffect = {until: clock + (holy ? .65 : .32), type: holy ? 'holy' : 'strike'};
-  battle.catNext = clock + [1.32, 1.2, 1.16, 1.14, 1.06, 1][cat.form];
-  battle.link = clock + .95;
-  const resistant = battle.enemy.trial !== undefined || battle.enemy.chapter >= 10 && battle.enemy.boss;
-  const base = form.atk * (resistant ? .35 : 1);
-  let damage = Math.ceil(base * (holy ? 1.5 : 1));
-  if (!holy && cat.form === 1) battle.burn = {at: clock + .55, damage: Math.ceil(base * .35)};
-  if (!holy && cat.form === 2) battle.slowedUntil = clock + .65;
-  if (!holy && cat.form === 3 && battle.strike) damage += Math.ceil(base * .45);
-  if (!holy && cat.form === 4) {
-    const drained = Math.ceil(base * .18);
-    damage += drained;
-    cat.hp = Math.min(form.hp, cat.hp + drained);
-  }
-  if (!holy && cat.form === 5) damage += Math.ceil(base * .3);
-  battle.catPressure = clock + 1.55;
-  positionalHit(actorPoint('cat'), damage);
-}
-
-function updateBattle(dt) {
-  const {enemy} = battle;
-  battle.age += dt;
-  if (battle.age < .4) return;
-  if (battle.ambush) {
-    battle.ambush = false;
-    hurtPlayer(enemy.power);
-    if (paused) return;
-  }
-  if (joined) updateCat(dt);
-  if (!battle || paused) return;
-  updateCompanion(dt);
-  if (!battle || paused) return;
-  const strike = battle.strike;
-  if (strike) {
-    if (clock < strike.at) return;
-    hurtCompanion(strike);
-    if (joined && cat.hp > 0 && clock >= battle.catDodge &&
-        strikeContains(strike, actorPoint('cat'), arenaCat.radius)) {
-      const damage = Math.max(240, strike.power * (enemy.trial !== undefined ? 132 : 90) - catForm().def);
-      cat.hp = Math.max(0, cat.hp - damage);
-      addNumber(damage, battle.catX, battleDepth(battle.catY) - 35, '#ff9a9a');
-      if (!cat.hp) return defeat('ソソは倒れた');
-      const ratio = cat.hp / catForm().hp;
-      if (cat.form < 5) {
-        const mpRatio = cat.mp / catForm().mp;
-        cat.form = 0;
-        cat.hp = Math.max(1, Math.round(ratio * catForm().hp));
-        cat.mp = Math.round(mpRatio * catForm().mp);
-        battle.awakeSince = battle.age;
-        say('ソソの覚醒が中断された。');
-      }
-      if (ratio <= .1 && !battle.superAwake) {
-        battle.superAwake = true;
-        burstUntil = clock + .55;
-        audio.play('creation');
-        say('一美が黄金の光をまとった。超覚醒！');
-        if (!enemy.boss) {
-          hurtEnemy(enemy, enemy.hp);
-          return;
-        }
-      }
-    }
-    if (strikeContains(strike, actorPoint('hero'), arenaHero.radius) && (strike.wave || jumpHeight < 18)) {
-      hurtPlayer(strike.power, strike);
-    }
-    if (strike.kind === 'rush') {
-      moveArena('enemy', strike.direction.x, strike.direction.y, 22, [heroBlocker()]);
-    }
-    battle.impact = {...strike, until:clock + .45, strong:battle.body.size >= 2.8};
-    if (battle.impact.strong) audio.play('quake');
-    battle.damageFlash = clock + .17;
-    battle.strike = null;
-    battle.next = clock + enemy.interval;
-    return;
-  }
-  advanceEnemy(dt);
-}
-
 const closeTo = (x, y, radius) => Math.hypot(player.x - x, player.y - y) < radius;
 
 function updateField(dt) {
@@ -1164,6 +989,9 @@ function updateField(dt) {
   updateDoorLatch();
   const chapter = chapterOf(player.x);
   discoverTrailCache(chapter);
+  const stage = stagePaths[chapter];
+  if (stageHazards(dt,stage)) return;
+  findStageCache(stage);
   if (joined) {
     const dx = player.x - cat.x, dy = player.y - cat.y;
     const gap = Math.hypot(dx, dy);
@@ -1201,8 +1029,6 @@ function updateField(dt) {
   }
   const gem = reachableGem(11);
   if (gem) collectGem(gem);
-  const shrine = shrines[chapter];
-  if (!returning && !shrine.solved && closeTo(shrine.x, shrine.row, 10)) return openShrine(shrine, chapter);
   for (const enemy of activeEnemies(chapter)) {
     if (!enemy.hp || !unlocked(enemy) || (returning && !done)) continue;
     const dx = player.x - enemy.x, dy = player.y - enemy.y;
@@ -1213,16 +1039,22 @@ function updateField(dt) {
     if (!chase) {
       const roam = enemy.boss ? 5 : 15;
       const aim = enemy.homeX + Math.sin(clock * .9 + enemy.slot) * roam;
+      if (Math.abs(aim - enemy.x) > .5) enemy.fieldFacing = {x:Math.sign(aim - enemy.x),y:0};
       enemy.x += clamp(aim - enemy.x, -dt * 20, dt * 20);
       enemy.y += clamp(enemy.homeY - enemy.y, -dt * 18, dt * 18);
     } else if (distance > 0) {
+      if (distance > 22) enemy.fieldFacing = directionTo(dx,dy);
       const speed = enemy.speed * .53 * dt;
       enemy.x = clamp(enemy.x + dx / distance * speed, enemy.homeX - leash, enemy.homeX + leash);
       enemy.y = clamp(enemy.y + dy / distance * speed, enemy.homeY - leash, enemy.homeY + leash);
     }
     if (jumpHeight >= 18 || clock < fieldSafeUntil || clock < invulnerableUntil || !closeTo(enemy.x, enemy.y, 11)) continue;
-    const rear = (enemy.x - player.x) * player.facing.x + (enemy.y - player.y) * player.facing.y < -3;
-    encounter(enemy, rear);
+    const towardEnemy = directionTo(-dx,-dy,player.facing);
+    const enemyFacing = enemy.fieldFacing || {x:-1,y:0};
+    const playerToward = player.facing.x * towardEnemy.x + player.facing.y * towardEnemy.y;
+    const enemyToward = -(enemyFacing.x * towardEnemy.x + enemyFacing.y * towardEnemy.y);
+    encounter(enemy, enemyToward > .45 && playerToward < -.45 ? 'rear' :
+      playerToward > .45 && enemyToward < -.45 ? 'first' : 'normal');
     break;
   }
 }
@@ -1240,6 +1072,10 @@ function update(dt) {
     advanceTownDoor();
     return;
   }
+  if (battle) {
+    updateCommandBattle(dt);
+    return;
+  }
   ridePlatform();
   updateJump(dt);
   const input = playableInput();
@@ -1248,63 +1084,43 @@ function update(dt) {
   if (interior) return;
   if (!paused) updateFireballs(dt);
   if (paused) return;
-  if (battle) updateBattle(dt);
-  else updateField(dt);
+  updateField(dt);
 }
 
 function updateUI() {
-  const chapter = chapterOf(player.x);
   $('game').dataset.battle = String(Boolean(battle));
   $('pause').hidden = Boolean(innScene) || mode === 'title' || mode === 'home';
   const playing = mode === 'field' || mode === 'battle';
-  $('joystick').hidden = !playing;
+  const exploring = mode === 'field' && !innScene;
+  $('joystick').hidden = !exploring;
   $('joystick').setAttribute('aria-disabled',String(!movementAllowed()));
-  $('actions').hidden = !playing || Boolean(innScene);
+  $('actions').hidden = !exploring;
+  $('hud').hidden = !playing || Boolean(battle) || Boolean(innScene);
+  $('battle-commands').hidden = !battle;
+  $('battle-commands').inert = paused;
   $('actions').inert = !movementAllowed();
   attackButton.dataset.charge = String(!bDashUsed && chargeStarted !== null && clock - chargeStarted >= .58);
   updatePlaceTitle();
-  $('town-clock').hidden = mode !== 'field' || Boolean(battle);
-  $('town-clock').textContent = (interior || player.x - chapter * span < 355 ? towns[chapter].name + '　' : '') + townTime();
-  $('location').textContent = interior ? townTypes[interior.site.kind][0] : trialVitals ? (battle?.enemy.hiddenRegion !== undefined ? '隠しダンジョン' : '四天王の闘技場') : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
-  $('vitals').textContent = 'Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP() + (clock < footingUntil ? '　足止め' : '');
-  $('progress').textContent = '経験値 ' + player.xp + '/' + nextXp() + '（あと' + (nextXp() - player.xp) + '）　' + player.gold + 'G　攻' + attackPower() + ' / 防' + defense();
-  $('enemy-status').hidden = !battle;
-  if (battle) {
-    $('enemy-status').textContent = battle.enemy.name + '　HP ' + battle.enemy.hp + '/' + battle.enemy.max +
-      (isFinalBoss(battle.enemy) ? '　第' + finalPhase(battle.enemy) + '形態' : '') +
-      (battle.strike ? '　⚠ ' + battle.strike.label : '');
-  }
-  const member = currentCompanion();
-  $('companion-status').hidden = !member;
-  if (member) $('companion-status').textContent = member.name + ' Lv.' + companionLevel(member) +
-    '　HP ' + member.hp + '/' + companionHP(member) + '　MP ' + member.mp + '/' + companionMP(member);
-  $('enemy-hp').hidden = !battle;
-  if (battle) {
-    $('enemy-hp').max = battle.enemy.max;
-    $('enemy-hp').value = battle.enemy.hp;
-  }
-  $('awakening').hidden = !battle || !joined;
-  if (battle && joined) {
-    const next = awakening[cat.form + 1];
-    const elapsed = Math.max(0, battle.age - battle.awakeSince);
-    const from = catForm().turn * 5;
-    $('awake-gauge').max = next ? next.turn * 5 - from : 1;
-    $('awake-gauge').value = next ? elapsed - from : 1;
-    $('soso-status').textContent = 'ソソ 第' + (cat.form + 1) + '形態・' + catForm().name +
-      '　Lv.99 HP ' + cat.hp + '/' + catForm().hp + ' MP ' + cat.mp + '/' + catForm().mp + (next ? '　覚醒まで ' + Math.max(0, Math.ceil(next.turn * 5 - elapsed)) + '秒' : '　覚醒完了');
-  }
+  $('vitals').textContent = 'HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP();
+  $('field-hp').max = maxHP();
+  $('field-hp').value = player.hp;
+  $('field-mp').max = maxMP();
+  $('field-mp').value = player.mp;
   const shot = $('shot');
-  const wait = shotGear === 'ring' ? magicAt - clock : specialAt - clock;
-  shot.setAttribute('aria-disabled', String(Boolean(interior || wait > 0 || player.mp < (shotGear === 'ring' ? starterRing.mp : 10))));
-  const duration = shotGear === 'ring' ? .55 : 15;
+  const wait = shotGear === 'star' ? specialAt - clock : magicAt - clock;
+  const routeSpell = routeSpellById.get(shotGear);
+  const cost = routeSpell?.cost ?? (shotGear === 'ring' ? starterRing.mp : shotGear === 'moon' ? stoneSpell.mp : 10);
+  shot.setAttribute('aria-disabled', String(Boolean(interior || wait > 0 || player.mp < cost)));
+  const duration = shotGear === 'star' ? 15 : routeSpell ? .7 : .55;
   shot.style.setProperty('--cooldown', clamp(wait / duration, 0, 1) * 100);
-  const shootName = shotGear === 'ring' ? '火の玉' : battle && joined && cat.hp > 0 ?
-    (cat.form === 5 && cat.mp >= 999 ? '天地創生' : '双星の誓い') : 'ソソを思う';
+  const shootName = routeSpell?.name ?? (shotGear === 'ring' ? '火の玉' :
+    shotGear === 'moon' ? stoneSpell.name : 'ソソを思う');
   attackButton.title = equipped('weapon').name + '・' + bladeForm().name;
   shot.title = shootName + (wait > 0 ? '（あと' + Math.ceil(wait) + '秒）' : '');
   shot.setAttribute('aria-description', shot.title);
   attackButton.setAttribute('aria-description',attackButton.title);
   $('level').textContent = clock < levelUntil ? 'レベルアップ！ Lv.' + level() : '';
+  $('fade').dataset.encounter = String(Boolean(battle && battle.age < .18));
   $('fade').dataset.active = String(Boolean(battle && battle.age < .18 || doorTransition && clock >= doorTransition.end - .13));
 }
 

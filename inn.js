@@ -28,7 +28,8 @@ function innSnapshot() {
 }
 function loadInn(data) {
   innPending = data?.pending && townSites.get(data.pending.site)?.kind === 'inn' ?
-    {site:data.pending.site, day:numeric(data.pending.day,townDay(),townDay(),townDay() + 1)} : null;
+    {site:data.pending.site, day:numeric(data.pending.day,townDay(),townDay(),townDay() + 1),
+      choice:Number.isInteger(data.pending.choice) ? data.pending.choice : null} : null;
   innBuffUntil = numeric(data?.buffUntil,0,0,360003600);
   footingUntil = numeric(Math.ceil(data?.footing),0,0,120);
 }
@@ -47,7 +48,9 @@ function tonightConversation(scene) {
   };
   if (member.affinity <= -4 || n === 3) return {
     line:member.name + '「昼間の道選び、少し無理をしたと思う。今のうちに話し合いたい」',
-    choices:[['互いの話を聞いて仲直り','お互いの考えを聞き、旅を続けることにした。',5],['今夜は距離を置く','それぞれの寝台で考える時間を取った。',-2]]
+    choices:[['互いの話を聞いて仲直り','お互いの考えを聞き、旅を続けることにした。',5],
+      ['今夜は距離を置く','それぞれの寝台で考える時間を取った。',-2],
+      ...(member.affinity <= -4 ? [['ここで別れを告げる','口論になり、' + member.name + 'は部屋を出ていった。',0,'depart']] : [])]
   };
   const prompts = [
     '「旅先でいちばんおかしかったこと、覚えてる？」', '「最初に会った日のこと、時々思い出すよ」',
@@ -77,6 +80,7 @@ function resumeInn() {
   if (interior?.site !== site) interior = {site,x:320,y:145};
   innScene = {site, profile:innProfile(site.chapter), time:0, stage:-1, response:null, choice:null};
   innScene.conversation = tonightConversation(innScene);
+  innScene.choice = innScene.conversation.choices?.[innPending.choice] || null;
   paused = true;
   clearInput();
   $('panel').hidden = true;
@@ -95,15 +99,17 @@ function advanceInn(dt) {
   scene.stage = stageIndex;
   const beat = innStages[stageIndex];
   audio.setTrack(beat.track);
-  $('stay-caption').textContent = stageIndex === 3 ? scene.conversation.line : beat.label;
+  $('stay-caption').textContent = stageIndex === 3 ? scene.choice?.[1] || scene.conversation.line : beat.label;
   $('stay-choices').replaceChildren();
-  if (stageIndex === 3 && scene.conversation.choices) {
-    for (const choice of scene.conversation.choices) {
+  if (stageIndex === 3 && !scene.choice && scene.conversation.choices) {
+    for (const [index, choice] of scene.conversation.choices.entries()) {
       const button = document.createElement('button');
       button.textContent = choice[0];
       button.onclick = () => {
         if (scene.choice) return;
         scene.choice = choice;
+        innPending.choice = index;
+        save();
         $('stay-caption').textContent = choice[1];
         $('stay-choices').replaceChildren();
       };
@@ -127,7 +133,14 @@ function finishStay() {
   if (profile.cure) footingUntil = clock;
   if (profile.blessing) innBuffUntil = townSeconds + 3600;
   const member = currentCompanion();
-  if (member) {
+  const departed = member && choice?.[3] === 'depart';
+  if (departed) {
+    member.departed = {gold:player.gold, day:townDay()};
+    player.gold = 0;
+    member.affinity = -100;
+    remember(member,'喧嘩別れ');
+    player.party = [];
+  } else if (member) {
     member.hp = profile.modest ? Math.min(companionHP(member), member.hp + 38) : companionHP(member);
     member.mp = profile.modest ? Math.min(companionMP(member), member.mp + 18) : companionMP(member);
     if (choice) {
@@ -146,6 +159,10 @@ function finishStay() {
   say(profile.modest ? '朝になり、体力と魔力が回復した。' :
     profile.blessing ? 'HP・MPが全快。翌朝まで攻撃力が上昇した。' : '朝になり、HP・MPが全快した。',7);
   save();
+  if (departed) panel(member.name + 'の置き手紙', [
+    '「今は一緒に旅を続けられない。先に出る」',
+    '手持ちの' + member.departed.gold + 'Gがなくなっていた。銀行の預金は残っている。'
+  ], [['手紙をしまう',resume]]);
 }
 
 document.getElementById('stay-skip').onclick = finishStay;

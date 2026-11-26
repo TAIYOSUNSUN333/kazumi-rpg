@@ -42,6 +42,7 @@ for (let index = townMelodies.length; index < prefectures.length; index++) {
 const effects = {
   quake:[35,29], step:[41], door:[61,66,73],
   seal: [55, 60, 64, 67, 72, 79],
+  stoneReward: [62, 66, 69, 74, 78, 81, 86],
   jump: [55, 62], air: [74, 62, 55], magic: [67, 74, 81], pot: [48, 58, 44],
   attack: [59, 48], hit: [43, 38], victory: [60, 64, 67, 72],
   awake1: [67, 74, 79], awake2: [57, 65, 72, 81], awake3: [72, 78, 85],
