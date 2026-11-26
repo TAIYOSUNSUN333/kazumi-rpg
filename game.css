@@ -6,6 +6,7 @@ html, body {
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  touch-action: manipulation;
   background: #111222;
   color: #fff1df;
   font: 15px system-ui, sans-serif;
@@ -25,6 +26,7 @@ html, body {
 }
 canvas { width: 100%; height: 100%; display: block; object-fit: fill; image-rendering: pixelated; }
 button {
+  touch-action: manipulation;
   min-height: 44px;
   padding: 5px 10px;
   color: #fff4e4;
@@ -53,7 +55,7 @@ button:disabled { opacity: .55; }
 [data-hold=down] { grid-area: down; }
 #actions { right: max(8px, env(safe-area-inset-right)); grid-template-columns: repeat(2, minmax(46px, auto)); }
 #special { grid-column: 1 / -1; background: #713b63eb; }
-#panel { position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(92%, 490px); max-height: 72%; overflow: auto; overscroll-behavior: contain; background: #211b34f5; border: 1px solid #cb9ca9; border-radius: 15px; padding: clamp(10px, 3vh, 24px); box-shadow: 0 12px 40px #080710aa; }
+#panel { touch-action: pan-y pinch-zoom; position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(92%, 490px); max-height: 72%; overflow: auto; overscroll-behavior: contain; background: #211b34f5; border: 1px solid #cb9ca9; border-radius: 15px; padding: clamp(10px, 3vh, 24px); box-shadow: 0 12px 40px #080710aa; }
 #panel-title { margin: 0 0 8px; color: #ffd5a6; font: bold clamp(20px, 5vh, 36px) Georgia, serif; }
 #panel-body { line-height: 1.45; }
 #panel-body p { margin: 6px 0; }
