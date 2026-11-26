@@ -104,14 +104,16 @@ function attackPosition(origin) {
   return pincer ? ['挟撃',1.75] : front <= -.62 ? ['背後',1.5] : front < .58 ? ['側面',1.25] : ['正面',1];
 }
 
-function positionalHit(origin, damage) {
+function positionalHit(origin, damage, technique) {
   if (battle.enemyEvade > clock) {
     addNumber('回避', battle.enemyX, battleDepth(battle.enemyY) - 28, '#a7d4e7');
     return;
   }
   const [name, multiplier] = attackPosition(origin);
   const enemy = battle.enemy;
-  hurtEnemy(enemy, Math.round(damage * multiplier), multiplier > 1 ? name : '');
+  const weakness = technique && ({float:'air', stomp:'charge', scuttle:'magic', charge:'air', duel:'charge'})[battle.body.motion] === technique;
+  hurtEnemy(enemy, Math.round(damage * multiplier * (weakness ? 1.25 : 1)),
+    [multiplier > 1 ? name : '', weakness ? '弱点' : ''].filter(Boolean).join('・'));
   if (battle?.enemy === enemy && battle.body.size < 1.5) {
     const away = directionTo(battle.enemyX - origin.x,battle.enemyY - origin.y);
     moveArena('enemy',away.x,away.y,6,[heroBlocker()]);

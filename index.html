@@ -17,6 +17,7 @@
   <script defer src="battlefield.js"></script>
   <script defer src="inn.js"></script>
   <script defer src="terrain.js"></script>
+  <script defer src="movement.js"></script>
   <script defer src="game.js"></script>
   <script defer src="render.js"></script>
 </head>
@@ -36,26 +37,33 @@
     <p id="message" role="status" aria-live="polite"></p>
     <div id="portrait">スマートフォンを横にすると遊びやすくなります</div>
     <nav id="menu" aria-label="メニュー">
-      <button id="interact" hidden>話す</button>
       <button id="pause" hidden>メニュー</button>
       <button id="mute" aria-pressed="false">消音</button>
     </nav>
-    <nav id="dpad" aria-label="移動" hidden>
-      <button data-hold="up" aria-label="上へ">↑</button>
-      <button data-hold="left" aria-label="左へ">←</button>
-      <button data-hold="right" aria-label="右へ">→</button>
-      <button data-hold="down" aria-label="下へ">↓</button>
-    </nav>
-    <div id="joystick" role="group" aria-label="戦闘の移動（ジョイスティック）" hidden>
+    <div id="joystick" role="group" aria-label="移動（ジョイスティック）" hidden>
       <span id="stick-knob" aria-hidden="true"></span>
     </div>
-    <nav id="actions" aria-label="アクション" hidden>
-      <button data-hold="attack">攻撃</button>
+    <nav id="mobility" aria-label="移動技" hidden>
+      <button data-hold="jump" id="jump">ジャンプ</button>
+      <button data-hold="dash" id="dash">ダッシュ</button>
+      <button data-hold="crouch" id="crouch">しゃがむ</button>
       <button data-hold="guard" id="guard" hidden>防御</button>
-      <button data-hold="dodge">回避</button>
-      <button data-hold="jump">ジャンプ</button>
-      <button id="magic" data-hold="magic" disabled>魔法</button>
-      <button id="special" data-hold="special">ソソを思う</button>
+      <button data-hold="dodge" id="dodge" hidden>回避</button>
+    </nav>
+    <nav id="context-actions" aria-label="周囲との操作" hidden>
+      <button id="interact" hidden>調べる</button>
+      <button id="buy" hidden>買う</button>
+      <button id="sell" hidden>売る</button>
+    </nav>
+    <nav id="actions" aria-label="装備アクション" hidden>
+      <button data-hold="attack" id="slash" aria-label="斬">
+        <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M4 27 23 7l5-3-3 5L7 29Zm3-13C12 9 18 5 25 4M12 27c6-3 10-7 14-13"/></svg>
+        <span>斬</span>
+      </button>
+      <button data-hold="shot" id="shot" aria-label="撃">
+        <svg aria-hidden="true" viewBox="0 0 32 32"><path d="M3 7c7 4 12 1 17 4l3-4c3 2 6 6 6 11a9 9 0 0 1-15 7l-4-4 4-1c-3-1-6-4-11-4l6-1Z"/><path d="M19 17c-3 4 1 7 4 4 1-2-1-4-4-4Z"/></svg>
+        <span>撃</span>
+      </button>
     </nav>
     <section id="panel" aria-labelledby="panel-title">
       <h1 id="panel-title">一美のスター街道</h1>

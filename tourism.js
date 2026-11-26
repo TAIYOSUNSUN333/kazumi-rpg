@@ -173,6 +173,7 @@ function regionalShop() {
     const price = (type === 'weapon' ? 32 : 27) + chapter * 3;
     const equip = () => {
       regionalGear[type] = chapter;
+      if (type === 'weapon') slashBase = null;
       trialGear[type] = null;
     };
     if (entry[type]) buttons.push([item.name + 'を装備', () => tourChange(equip, regionalShop), regionalGear[type] === chapter]);

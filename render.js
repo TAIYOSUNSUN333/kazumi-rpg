@@ -51,13 +51,32 @@ function drawActor(name, x, y, scale, face, pose) {
   ctx.restore();
 }
 
+function actionSprite(x,y,scale,face,frame) {
+  const sheet = picture('action-poses');
+  if (!sheet) return false;
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale((face < 0 ? -1 : 1) * scale,scale);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sheet,frame*64,0,64,64,-30,-54,60,58);
+  ctx.restore();
+  return true;
+}
+
 function hero(x, y, scale, face) {
-  const moving = Boolean(destination) || Boolean(battle && joystick.id !== null) || ['left','right','up','down'].some(pressed);
+  const moving = gait === 'walk' || gait === 'run';
   const pose = !player.hp ? 8 : clock < flashUntil ? 5 : clock < swingUntil ? 3 :
     glow && clock < glow.until ? 6 : jumpHeight > 2 ? 2 :
     battle && (pressed('guard') || clock < invulnerableUntil) ? 4 : clock < victoryUntil ? 7 :
     moving ? 1 + Math.floor(clock * 10) % 2 : 0;
-  drawActor('一美', x, y, scale, face, pose);
+  const frame = !player.hp || clock < flashUntil || clock < swingUntil ? -1 :
+    gait === 'dash' ? 10 : wallKickUntil > clock ? 5 : climbing ? 7 + Math.floor(clock * 9) % 2 :
+    wallContact && jumpHeight > floorUnderHero() + 8 ? 4 :
+    jumpHeight > floorUnderHero() + 4 ? 2 : clock < landedUntil ? 3 :
+    clock < uprightAt ? 9 : gait === 'crouch' ? 6 :
+    chargeStarted !== null && clock - chargeStarted >= .58 ? 11 :
+    gait === 'run' ? Math.floor(clock * 17) % 2 : -1;
+  if (frame < 0 || !actionSprite(x,y,scale,face,frame)) drawActor('一美', x, y, scale, face, pose);
   if (player.armor || regionalGear.armor !== null || trialGear.armor !== null) {
     const metal = regionalGear.armor !== null ? prefectures[regionalGear.armor].color :
       ['#817967','#b39571','#8eb2b9','#beadd1'][player.armor];
@@ -224,13 +243,57 @@ function drawBuilding(site, camera) {
   if (doorContact === site || Math.abs(player.x - site.x) <= 12) label(name, x, y + 20, '#fff0cf', 10);
 }
 
+function drawDoorHint(site,camera) {
+  const x = site.x - camera;
+  const y = fieldY(site.x,site.row);
+  const opening = doorTransition?.site === site;
+  const pulse = reducedMotion.matches ? 0 : Math.sin(clock * 7) * 3;
+  if (opening) {
+    const t = clamp((clock-doorTransition.start)/.30,0,1);
+    rect(x-7,y-18,14,19,'#292141');
+    polygon([[x-7,y-18],[x-7+14*(1-t),y-19+t*3],[x-7+14*(1-t),y+t*2],[x-7,y]],'#b69368');
+    lightAt(ctx,x,y-8,20+t*18,'#ffe2a782');
+    return;
+  }
+  lightAt(ctx,x,y-9,34,'#ffd48674');
+  polygon([[x-5,y-22+pulse],[x+5,y-22+pulse],[x,y-16+pulse]],'#fff2ac');
+}
+
+function drawPlatforms(chapter,camera) {
+  const features = motionFeatures(chapter);
+  for (const surface of [features.lift,features.ledge]) {
+    const x = surface.x-camera, foot = fieldY(surface.x,surface.y);
+    if (x < -60 || x > 700) continue;
+    groundShadow(x,foot,surface.width,.16*surface.width);
+    const tone = surface.moving ? '#b89a78' : '#80819a';
+    polygon([[x-surface.width,foot-surface.height],[x+surface.width,foot-surface.height],
+      [x+surface.width-4,foot-surface.height+9],[x-surface.width+4,foot-surface.height+9]],tone);
+    rect(x-surface.width+3,foot-surface.height+2,surface.width*2-6,2,'#e3c3a1');
+    if (!surface.moving) rect(x-21,foot-surface.height+9,42,surface.height-9,'#554b67bc');
+  }
+  const tunnel=features.tunnel;
+  const x=tunnel.x-camera, y=fieldY(tunnel.x,tunnel.y);
+  if (x > -30 && x < 670) {
+    rect(x-19,y-18,38,26,'#6d6578');
+    if (closeTo(tunnel.x,tunnel.y,25) || trailCaches.has(chapter)) rect(x-11,y-8,22,16,'#252639');
+    else rect(x-9,y-8,20,15,'#5b546a');
+    rect(x-15,y-18,30,4,'#b4a68c');
+  }
+}
+
 function drawTown(chapter, camera) {
   for (const town of towns) {
     if (Math.abs(town.chapter - chapter) > 1) continue;
     for (const site of town.sites) {
       if (site.x < camera - 30 || site.x > camera + 665 ||
           site.kind === 'secret' && !(townQuests[site.chapter] > 0)) continue;
-      drawBuilding(site, camera);
+      drawBuilding(site,camera);
+      if (site.kind !== 'secret') {
+        const x = site.x - camera + 14, y = fieldY(site.x,roofSurface(site).y);
+        for (let r=8;r<=39;r+=7) rect(x-3,y-r,7,1,'#cbb38b');
+        rect(x-4,y-40,1,35,'#a27a66'); rect(x+4,y-40,1,35,'#a27a66');
+      }
+      if (site === doorContact || site === doorTransition?.site) drawDoorHint(site,camera);
     }
   }
   const town = towns[chapter];
@@ -477,7 +540,8 @@ function drawField(chapter, camera) {
     }
   }
   ageLight(ctx);
-  drawTown(chapter, camera);
+  drawTown(chapter,camera);
+  drawPlatforms(chapter,camera);
   const view = scenicSpot(chapter);
   const sx = view.x - camera;
   const viewY = fieldY(view.x,view.y) - 96;
@@ -546,7 +610,7 @@ function drawField(chapter, camera) {
   if (clock < swingUntil) {
     const {x: dx, y: dy} = player.facing;
     polygon([[x, y - 9], [x + dx * 31 - dy * 10, y - 9 + dy * 31 + dx * 10],
-      [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], swingKind === 'air' ? '#95dfff' : '#fff1be');
+      [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], swingKind === 'charged' ? '#eaa4ff' : swingKind === 'air' ? '#95dfff' : '#fff1be');
   }
 }
 
@@ -640,7 +704,7 @@ function drawBattle() {
       if (battle.superAwake) lightAt(ctx, heroPoint.x, heroY - 20, 55, '#ffd76985');
       if (pressed('guard')) diamond(heroPoint.x + player.facing.x * 12,heroY - 20,9,17,'#95d7ddc7');
       if (clock < swingUntil) {
-        const reach = equipped('weapon').reach ?? 55;
+        const reach = (equipped('weapon').reach ?? 55) + (swingKind === 'charged' ? bladeForm().chargeReach : 0);
         const end = {x:heroPoint.x + player.facing.x * reach, y:heroY - 26 + player.facing.y * reach * .68};
         slashArc(heroPoint.x, heroY - 25, player.facing.x, reach * .76);
         polygon([[heroPoint.x,heroY - 26],[end.x,end.y - 9],[end.x,end.y + 5]], swingKind === 'air' ? '#9de0ef' : '#ffe5ad');
@@ -709,6 +773,27 @@ function drawBattle() {
   ctx.restore();
 }
 
+function drawFireballs(camera) {
+  if (!flameBolts.length) return;
+  ctx.save();
+  if (battle) {
+    ctx.translate(320,245);
+    ctx.scale(arenaZoom(),arenaZoom());
+    ctx.translate(-320,-245);
+  }
+  for (const bolt of flameBolts) {
+    if (bolt.battle !== battle || !battle && bolt.chapter !== chapterOf(player.x)) continue;
+    const x = battle ? bolt.x : bolt.x - camera;
+    const y = (battle ? battleDepth(bolt.y) : fieldY(bolt.x,bolt.y)) - 19 - bolt.height * .54;
+    lightAt(ctx,x,y,28,'#ff7631a0');
+    const dx=bolt.direction.x, dy=bolt.direction.y*.68;
+    polygon([[x-dx*20,y-dy*20],[x-dx*9+dy*7,y-dy*9-dx*7],[x+dx*7,y+dy*7],[x-dx*9-dy*7,y-dy*9+dx*7]],'#f38340c7');
+    diamond(x,y,7,6,'#ffe5a5');
+    diamond(x+1,y-1,3,3,'#fffbd1');
+  }
+  ctx.restore();
+}
+
 function render() {
   if (innScene) return drawInnStay();
   if (interior && mode === 'field') return drawInterior();
@@ -717,6 +802,7 @@ function render() {
   if (mode === 'title' || mode === 'home') drawHome();
   else if (battle) drawBattle();
   else drawField(chapter, camera);
+  drawFireballs(camera);
   if (!battle && mode === 'field' && defeatedFoe?.until > clock && defeatedFoe.chapter === chapter) {
     ctx.save();
     ctx.globalAlpha = (defeatedFoe.until - clock) / .67;
