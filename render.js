@@ -45,14 +45,40 @@ function hero(x, y, scale, face) {
   rect(-10, -19, 5, 9, '#e897b4');
   rect(-7, -5, 5, 8, '#63394b');
   rect(3, -5, 5, 8, '#63394b');
-  if (rescued) {
-    rect(-5, -16, 10, 7, '#e8d0b1');
-    rect(-5, -19, 3, 3, '#e8d0b1');
-    rect(2, -19, 3, 3, '#e8d0b1');
-    rect(2, -15, 1, 2, '#543950');
-  }
   ctx.restore();
 }
+function drawCat(x, y, scale, formIndex = 0) {
+  const form = awakening[formIndex];
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  if (formIndex) {
+    for (let i = 0; i < formIndex + 1; i++) {
+      const angle = Math.PI * 2 * i / (formIndex + 1);
+      diamond(Math.cos(angle) * 20, Math.sin(angle) * 15 - 7, 2 + formIndex / 2, 4, form.color);
+    }
+  }
+  polygon([[-14, -6], [-20, -15], [-16, -19], [-9, -10]], form.color);
+  rect(-12, -12, 22, 13, form.color);
+  if (formIndex >= 2) {
+    polygon([[-5,-7],[-25,-25],[-20,-8],[-8,2]], form.color);
+  }
+  if (formIndex >= 4) {
+    polygon([[1,-18],[3,-32],[7,-25],[11,-34],[12,-18]], form.color);
+  }
+  if (formIndex === 5) {
+    ctx.strokeStyle = form.color;
+    ctx.beginPath();
+    ctx.ellipse(3, -33, 15, 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  polygon([[-5, -12], [-4, -23], [1, -17], [8, -17], [12, -23], [13, -8]], form.color);
+  rect(1, -13, 2, 3, '#402d4b');
+  rect(8, -13, 2, 3, '#402d4b');
+  rect(5, -8, 3, 2, '#a95776');
+  ctx.restore();
+}
+
 function monster(enemy, x, y, scale) {
   ctx.save();
   ctx.translate(x, y);
@@ -79,6 +105,7 @@ function drawHome() {
   rect(446, 218, 29, 57, '#3a2d45');
   rect(483, 210, 19, 19, '#ffdc91');
   hero(405, 278, 1.5, 1);
+  if (joined) drawCat(428, 280, 1.25);
 }
 function drawField(chapter, camera) {
   const [ground, leaf] = palettes[chapter];
@@ -117,6 +144,7 @@ function drawField(chapter, camera) {
     rect(x - 12, y - 31, 24 * enemy.hp / enemy.max, 3, '#ff8d8d');
   }
   const x = player.x - camera, y = player.y + 96;
+  if (joined) drawCat(cat.x - camera, cat.y + 96, .8);
   hero(x, y, .9, player.facing.x);
   if (clock < swingUntil) {
     const {x: dx, y: dy} = player.facing;
@@ -128,7 +156,8 @@ function drawField(chapter, camera) {
 function drawBattle() {
   const {enemy, heroX, enemyX, strike, damageFlash} = battle;
   const boss = enemy.boss;
-  rect(0, 0, 640, 360, boss ? '#301f3e' : '#252f45');
+  const phase = enemy.rank === 'major' && enemy.chapter === last ? finalPhase(enemy) : 1;
+  rect(0, 0, 640, 360, phase === 3 ? '#4c203a' : phase === 2 ? '#362455' : boss ? '#301f3e' : '#252f45');
   polygon([[0, 0], [225, 122], [415, 122], [640, 0]], '#433450');
   polygon([[0, 360], [0, 262], [220, 207], [420, 207], [640, 262], [640, 360]], '#554057');
   for (const x of [38, 94, 159, 481, 546, 602]) {
@@ -143,8 +172,33 @@ function drawBattle() {
     label(strike.label, enemyX, 151, '#ffc0ab', 18);
   }
   const offset = clock < damageFlash && !reducedMotion.matches ? Math.sign(heroX - enemyX) * 10 : 0;
-  monster(enemy, enemyX + offset, 244, boss ? 1.85 : 1.4);
+  monster(enemy, enemyX + offset, 244, boss ? 1.55 + phase * .25 : 1.4);
   hero(heroX, 244, 1.4, player.facing.x);
+  if (joined && cat.hp > 0) drawCat(battle.catX, 247, 1.15 + cat.form * .13, cat.form);
+  const effect = battle.catEffect;
+  if (effect && effect.until > clock && !reducedMotion.matches) {
+    const color = catForm().color;
+    if (effect.type === 'strike') {
+      const x = enemyX, y = 210;
+      const reach = 12 + cat.form * 5;
+      polygon([[x - reach,y + 12],[x + reach,y - 24],[x + reach * .5,y - 4],[x - reach * .8,y + 18]], color);
+      if (cat.form === 1) {
+        polygon([[x - 25,y + 2],[x + 20,y - 20],[x + 7,y - 7],[x - 25,y + 10]], color);
+      } else if (cat.form === 2 || cat.form === 3) {
+        for (const shift of [-14, 0, 14]) diamond(x + shift, y, 5, cat.form === 2 ? 10 : 20, color);
+      } else if (cat.form >= 4) {
+        polygon([[x + 12,y - 74],[x - 9,y - 36],[x + 6,y - 39],[x - 5,y + 7],[x + 13,y - 49],[x - 1,y - 46]], color);
+      }
+      label(cat.form === 5 ? '創世光' : catForm().spell, x, y - 30, color);
+    } else {
+      const radius = (effect.type === 'creation' ? 170 : 85) * (1 - (effect.until - clock) / 1.2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(battle.catX, 226, radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   if (clock < swingUntil) {
     const dx = player.facing.x;
     polygon([[heroX, 219], [heroX + dx * 46, 196], [heroX + dx * 42, 218], [heroX + dx * 21, 233]], '#fff2b9');

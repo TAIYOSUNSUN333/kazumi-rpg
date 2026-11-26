@@ -8,9 +8,9 @@ const chapterInfo=[
   ['白霧の沼','沼底の姫','霧の下に水。その下に泥。','水','泥'],
   ['夕焼けの砂丘','砂をまとう蜥蜴','砂から火が生まれ、火は夜を照らす。','砂','火'],
   ['凍星の湖','氷鏡の鯨','凍った水面に月が映る。','氷','月'],
-  ['崩れた天文台','星を読む巨人','遠くを見るには鏡、探すのは星。','鏡','星'],
+  ['崩れた天文台','アウレリオ','遠くを見るには鏡、探すのは星。','鏡','星'],
   ['夜明けの雲海','東雲の翼竜','雲を割る風が、朝日を呼ぶ。','風','日'],
-  ['天空の神殿','星喰いの王・ノクス','星は沈み、日が昇る。最後に月が眠る。','星','日','月']
+  ['天空の神殿','ヴィットリオ','星は沈み、日が昇る。最後に月が眠る。','星','日','月']
 ];
 
 const chapters = [
@@ -19,13 +19,13 @@ const chapters = [
   ['渡し守は、猫の声がした荷車を見たという。', '海面に映る星が、荷車の渡った先を指している。'],
   ['坑道の鏡の前に、ソソと同じ白い毛が一本落ちていた。', '鏡に映った荷車は風切りの峡谷へ向かった。'],
   ['ちぎれた橋の向こうで、鳥たちが何かにおびえている。', '石碑が光ると、遠くから止まった時計街の鐘が聞こえた。'],
-  ['時計職人は、ノクスが鳴き声のする檻を運んでいたと教えてくれた。', '時計が進み始めた。ノクスが沼へ逃げ込んだ方角がわかった。'],
+  ['時計職人は、黒いコートの男が鳴き声のする檻を運んでいたと教えてくれた。', '時計が進み始めた。黒いコートの男が沼へ逃げ込んだ方角がわかった。'],
   ['霧の奥から鳴き声がした。一美はソソの名前を呼んだ。', '霧が晴れ、砂丘へ続く檻の跡が現れた。'],
   ['砂に埋もれた祭壇には、夜道を照らす灯が刻まれている。', '祭壇の灯が、凍った湖へ向かう道を照らした。'],
   ['恵美ちゃんが氷の下を照らす。映っているのは檻の鍵だ。', '一美は溶けた氷の中から、銀色の鍵を拾い上げた。'],
-  ['ノクスは星の光を檻に集めていた。ソソをさらったのもそのためだった。', '望遠鏡の先に神殿が見える。ソソはあそこにいる。'],
-  ['雲の切れ間に、小さな家の屋根が見えた。「一緒に帰ろうね、ソソ」', '朝日が雲を割り、神殿への階段が姿を現した。'],
-  ['「その猫は星を呼ぶ」ノクスは檻の前に立った。「連れて帰る」と一美は剣を握った。', '銀の鍵が回った。あとは檻を守るノクスを倒すだけだ。']
+  ['天文台でソソの声がした。檻のそばに立つ男は、アウレリオと名乗った。', '星図には、ソソの力を吸い上げる装置が描かれている。銀の鍵を使おう。'],
+  ['壊れた装置からあふれた力で、空に亀裂が走った。一美とソソは世界の崩壊を止めに向かう。', '朝日の封印が開く。ソソが亀裂を支えているうちに、奥へ進もう。'],
+  ['ヴィットリオが最後の亀裂を広げている。一美は足もとのソソと目を合わせ、剣を抜いた。', '二人の力を合わせれば、ヴィットリオの守りを破れる。']
 ];
 
 const span = 960;
@@ -61,17 +61,39 @@ const attackPatterns = {
   slow: {label: 'ため打ち', reach: 15, extra: 9, lead: .75},
   wave: {label: '星の衝撃波', reach: 52, extra: 8, lead: .58}
 };
+const midBosses = ['桜鎌の番人', '夜啼き狼', '珊瑚の騎士', '黒晶ゴーレム', '落風の姉妹', '歯車の司祭',
+  '霧渡りの魔女', '砂灯の巨人', '銀鍵の猟犬', '星図の番兵', '裂空の使徒', '終鐘の守衛'];
+const awakening = [
+  {turn: 0, name: '無属性', hp: 12000, mp: 600, atk: 1700, def: 500, speed: 168, color: '#f0d6b5', spell: '猫爪'},
+  {turn: 3, name: '風属性', hp: 20000, mp: 1000, atk: 2600, def: 1000, speed: 195, color: '#96efbe', spell: '風牙'},
+  {turn: 7, name: '炎属性', hp: 34000, mp: 2000, atk: 3800, def: 1900, speed: 214, color: '#ff9766', spell: '聖炎'},
+  {turn: 12, name: '氷属性', hp: 49000, mp: 3500, atk: 5200, def: 3300, speed: 233, color: '#a9e5ff', spell: '氷華'},
+  {turn: 18, name: '雷属性', hp: 71000, mp: 6000, atk: 7300, def: 6000, speed: 252, color: '#e4bbff', spell: '天雷'},
+  {turn: 30, name: '全属性・創世神', hp: 99999, mp: 9999, atk: 9999, def: 9999, speed: 280, color: '#fff2a4', spell: '天地創生'}
+];
+const trials = [
+  ['炎帝フェルナンド', '#fa785f', ['rush','slow','wave'], 0, {name:'焔帝の剣', bonus: 36}, '炎冠を継ぐ者'],
+  ['氷帝カタリーナ', '#98d7f9', ['slow','wave','slow'], 1, {name:'氷帝の外套', bonus: 24}, '氷冠を継ぐ者'],
+  ['雷帝ルシアーノ', '#e2c476', ['rush','wave','rush'], 0, {name:'雷帝の剣', bonus: 48}, '雷冠を継ぐ者'],
+  ['闇帝ドミニク', '#b582da', ['wave','rush','wave'], 1, {name:'闇帝の鎧', bonus: 31}, '闇冠を継ぐ者']
+].map(([name, color, pattern, armor, reward, title], trial) => ({
+  name, color, pattern, armor, reward, title, trial, boss: true, chapter: last,
+  max: 210000 + trial * 38000, speed: 63 + trial * 7, range: 35, power: 65 + trial * 6, interval: 1.25 - trial * .1
+}));
 const enemies = chapters.flatMap((_, chapter) => [205, 260, 400, 525, 610, 720, 815, 910].map((spot, slot) => {
-  const boss = slot === 7;
+  const boss = slot >= 6;
+  const rank = slot === 7 ? "major" : boss ? "mid" : null;
   const optional = slot === 1 || slot === 4;
   const kind = enemyKinds[(chapter + slot) % enemyKinds.length];
-  const max = boss ? 88 + chapter * 18 : 24 + chapter * 6 + slot * 2;
+  const max = chapter >= 10 ? (rank === 'major' ? 54000 + (chapter - 10) * 54000 :
+    rank === 'mid' ? 27000 + (chapter - 10) * 12000 : 3000 + slot * 280) :
+    boss ? (rank === 'mid' ? 62 + chapter * 15 : 88 + chapter * 18) : 24 + chapter * 6 + slot * 2;
   const homeX = chapter * span + spot;
   const homeY = optional ? (slot === 1 ? 62 : 146) : 104;
   return {
-    ...kind, name: boss ? chapterInfo[chapter][1] : kind.name,
+    ...kind, name: rank === 'major' ? chapterInfo[chapter][1] : rank === 'mid' ? midBosses[chapter] : kind.name,
     power: kind.power + chapter * 2 + (boss ? 5 : 0), max, hp: max,
-    homeX, homeY, x: homeX, y: homeY, chapter, slot, boss, optional, flash: 0
+    homeX, homeY, x: homeX, y: homeY, chapter, slot, boss, rank, optional, flash: 0
   };
 }));
 

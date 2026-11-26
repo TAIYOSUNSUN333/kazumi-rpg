@@ -69,3 +69,5 @@ button:disabled { opacity: .55; }
   #message { bottom: 113px; left: 8px; right: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { #fade { transition: none; } }
+#awakening { color: #fff0ad; }
+#awake-gauge { width: 100%; height: 7px; display: block; accent-color: #eac176; }
