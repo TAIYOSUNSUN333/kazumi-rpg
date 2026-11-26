@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="game.css">
   <script defer src="world.js"></script>
   <script defer src="audio.js"></script>
+  <script defer src="companions.js"></script>
   <script defer src="game.js"></script>
   <script defer src="render.js"></script>
 </head>
@@ -18,7 +19,9 @@
       <strong id="location"></strong>
       <div id="vitals"></div>
       <div id="progress"></div>
+      <div id="companion-status" hidden></div>
       <div id="enemy-status" hidden></div>
+      <progress id="enemy-hp" aria-label="敵の残りHP" hidden></progress>
       <div id="awakening" hidden><div id="soso-status"></div><progress id="awake-gauge" aria-label="ソソの覚醒ゲージ"></progress></div>
     </header>
     <p id="message" role="status" aria-live="polite"></p>

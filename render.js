@@ -38,7 +38,10 @@ function hero(x, y, scale, face) {
   ctx.scale(scale * (face < 0 ? -1 : 1), scale);
   const blink = clock < flashUntil && !reducedMotion.matches;
   rect(-11, 1, 22, 4, '#252236');
-  rect(-8, -20, 16, 15, blink ? '#fbd0d2' : '#cd6494');
+  const armorColors = ['#cd6494', '#ae7869', '#86a9b9', '#a188cc'];
+  rect(-8, -20, 16, 15, blink ? '#fbd0d2' : trialGear.armor !== null ? '#745b9f' : armorColors[player.armor]);
+  rect(-8, -12, 16, 2, '#efc08f');
+  rect(8, -13, 3, 13, player.weapon || trialGear.weapon !== null ? '#d7e8e8' : '#a98062');
   rect(-9, -32, 17, 13, '#472c49');
   rect(-5, -29, 12, 11, '#f4ccac');
   rect(3, -26, 2, 3, '#492f45');
@@ -47,6 +50,36 @@ function hero(x, y, scale, face) {
   rect(3, -5, 5, 8, '#63394b');
   ctx.restore();
 }
+function drawCompanion(name, x, y, scale, face, motion = 0, hit = false) {
+  const profile = companionProfiles[name];
+  if (!profile) return hero(x, y, scale, face);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale * (face < 0 ? -1 : 1), scale);
+  rect(-12, 1, 24, 4, '#2a2635');
+  if (name === 'クルミ') {
+    polygon([[-12,-4],[-16,-20],[-10,-29],[-6,-21],[5,-21],[10,-29],[15,-17],[12,-4]], profile.hair);
+    rect(-10, -17, 23, 14, profile.color);
+    rect(-5, -19, 14, 9, profile.skin);
+    rect(-3, -17, 3, 4, '#352541');
+    rect(5, -17, 3, 4, '#352541');
+    diamond(3, -11, 3, 2, '#ffbb74');
+  } else {
+    const w = profile.width;
+    rect(-w, -21, w * 2, 16, hit ? '#ffbab1' : profile.color);
+    rect(-w + 2, -10, w * 2 - 4, 3, '#e9c18c');
+    rect(-9, -33, 18, name === '恵美ちゃん' ? 22 : 14, profile.hair);
+    rect(-5, -28, 12, 10, profile.skin);
+    rect(3, -26, 2, 3, '#312642');
+    rect(-7, -5, 5, 8 - motion, '#45415a');
+    rect(3, -5, 5, 8 + motion, '#45415a');
+    if (name === '一郎') rect(7, -20, 4, 15, '#dab988');
+    if (name === 'タク') diamond(-8, -28, 4, 5, '#91c37e');
+    if (name === '恵美ちゃん') rect(-10, -32, 18, 3, '#accbda');
+  }
+  ctx.restore();
+}
+
 function drawCat(x, y, scale, formIndex = 0) {
   const form = awakening[formIndex];
   ctx.save();
@@ -85,10 +118,31 @@ function monster(enemy, x, y, scale) {
   ctx.scale(scale, scale);
   const color = clock < enemy.flash && !reducedMotion.matches ? '#ffe9d7' : enemy.color;
   rect(-14, 0, 28, 4, '#242031');
-  polygon([[-14, 0], [-15, -13], [-20, -31], [-6, -24], [0, -30], [6, -24], [20, -31], [15, -13], [14, 0]], '#422944');
-  polygon([[-12, -2], [-14, -17], [-9, -23], [9, -23], [14, -17], [12, -2]], color);
-  rect(-8, -16, 5, 3, '#382841');
-  rect(3, -16, 5, 3, '#382841');
+  const variant = enemy.variant ?? enemy.trial;
+  const bob = reducedMotion.matches ? 0 : Math.sin(clock * 6 + (enemy.slot ?? 0)) * 2;
+  if (variant === 1) {
+    polygon([[-19,-3],[-21,-15],[-12,-29],[11,-29],[22,-15],[19,-3]], '#3d3748');
+    polygon([[-16,-8],[-14,-19],[-7,-25],[8,-25],[16,-19],[16,-8]], color);
+    rect(-14,-14,28,3,'#503745');
+    rect(-6,-11,12,3,'#f2bf85');
+  } else if (variant === 2) {
+    ctx.translate(0, bob - 5);
+    diamond(0, -16, 17, 18, '#422944');
+    diamond(0, -16, 13, 14, color);
+    diamond(0, -16, 5, 7, '#fff0ad');
+    diamond(-18, -10, 3, 5, color);
+    diamond(18, -21, 3, 5, color);
+  } else if (variant === 3) {
+    ctx.translate(0, bob);
+    polygon([[-17,0],[-19,-12],[-8,-26],[6,-29],[15,-16],[20,0],[10,-5],[5,1],[-2,-5],[-11,1]], color);
+    rect(-7,-18,3,4,'#382841');
+    rect(4,-18,3,4,'#382841');
+  } else {
+    polygon([[-14, 0], [-15, -13], [-20, -31], [-6, -24], [0, -30], [6, -24], [20, -31], [15, -13], [14, 0]], '#422944');
+    polygon([[-12, -2], [-14, -17], [-9, -23], [9, -23], [14, -17], [12, -2]], color);
+    rect(-8, -16, 5, 3, '#382841');
+    rect(3, -16, 5, 3, '#382841');
+  }
   if (enemy.boss) polygon([[-11, -28], [-13, -39], [-5, -34], [0, -42], [5, -34], [13, -39], [11, -28]], '#ffd280');
   ctx.restore();
 }
@@ -109,7 +163,20 @@ function drawHome() {
 }
 function drawField(chapter, camera) {
   const [ground, leaf] = palettes[chapter];
-  rect(0, 0, 640, 360, ground);
+  const light = ctx.createLinearGradient(0, 0, 0, 360);
+  light.addColorStop(0, '#253248');
+  light.addColorStop(.40, ground);
+  light.addColorStop(1, '#1f3443');
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 0, 640, 360);
+  for (let i = -1; i < 7; i++) {
+    const ridge = i * 130 - (camera * .19 % 130);
+    polygon([[ridge, 115],[ridge + 59, 36 + (i % 3) * 12],[ridge + 138, 115]], '#354650');
+  }
+  rect(0, 119, 640, 23, chapter === 2 || chapter === 8 ? '#6b9bb0' : ground);
+  if (chapter === 2 || chapter === 8) {
+    for (let i = 0; i < 20; i++) rect((i * 79 - camera * .3) % 640, 121 + i * 5 % 18, 19, 1, '#abcbcb');
+  }
   rect(0, 172, 640, 54, '#aca07d');
   rect(0, 178, 640, 42, '#bdac89');
   for (let i = Math.floor(camera / 48); i < (camera + 660) / 48; i++) {
@@ -126,8 +193,8 @@ function drawField(chapter, camera) {
     if (gem.on && Math.abs(gem.x - player.x) < 640) diamond(gem.x - camera, gem.row + 89, 6, 9, '#ffe5a0');
   }
   for (const npc of npcs) {
-    if (npc.visited || Math.abs(npc.x - player.x) > 640) continue;
-    hero(npc.x - camera, 200, .75, 1);
+    if (npc.name === player.party[0] || Math.abs(npc.x - player.x) > 640) continue;
+    drawCompanion(npc.name, npc.x - camera, 200, .8, 1);
     label(npc.name, npc.x - camera, 166);
   }
   for (const shrine of shrines) {
@@ -156,6 +223,9 @@ function drawField(chapter, camera) {
     }
   }
   const x = player.x - camera, y = player.y + 96 - jumpHeight;
+  const member = currentCompanion();
+  if (member) drawCompanion(member.name, companionTrail.x - camera, companionTrail.y + 96, .9,
+    Math.sign(player.x - companionTrail.x), Math.sin(clock * 15) * 1.8);
   if (joined) drawCat(cat.x - camera, cat.y + 96, .8);
   if (jumpHeight) rect(x - 7, player.y + 98, 14, 3, '#292735');
   if (clock < swingUntil && swingKind === 'afterimage' && !reducedMotion.matches) {
@@ -206,6 +276,30 @@ function drawBattle() {
     ctx.globalAlpha = 1;
   }
   hero(heroX, heroY, 1.4, player.facing.x);
+  const member = currentCompanion();
+  if (member) {
+    const x = battle.allyX;
+    const visibleAction = battle.allyAction?.until > clock ? battle.allyAction : null;
+    const activity = battle.allyDodge > clock ? 8 : 0;
+    ctx.globalAlpha = member.hp > 0 ? 1 : .43;
+    drawCompanion(member.name, x - activity, 247 + (member.hp ? 0 : 8), 1.2,
+      Math.sign(enemyX - x), member.hp ? Math.sin(clock * 11) * 1.3 : 0, battle.allyHit > clock);
+    ctx.globalAlpha = 1;
+    if (battle.allyGuard > clock) diamond(x + 13, 224, 9, 15, '#98d5e1');
+    if (visibleAction?.kind === 'magic') {
+      ctx.strokeStyle = '#c3a7ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, 223);
+      ctx.lineTo(enemyX, 205);
+      ctx.stroke();
+    } else if (visibleAction?.kind === 'heal') {
+      diamond(heroX, 211, 11, 20, '#a6e0b1');
+    } else if (visibleAction) {
+      const reach = visibleAction.direction * 30;
+      polygon([[x,224],[x + reach,205],[x + reach * .65,232]], '#ffe0a0');
+    }
+  }
   if (joined && cat.hp > 0) drawCat(battle.catX, 247, 1.15 + cat.form * .13, cat.form);
   const effect = battle.catEffect;
   if (effect && effect.until > clock && !reducedMotion.matches) {

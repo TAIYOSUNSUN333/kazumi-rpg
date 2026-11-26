@@ -84,14 +84,15 @@ const enemies = chapters.flatMap((_, chapter) => [205, 260, 400, 525, 610, 720, 
   const boss = slot >= 6;
   const rank = slot === 7 ? "major" : boss ? "mid" : null;
   const optional = slot === 1 || slot === 4;
-  const kind = enemyKinds[(chapter + slot) % enemyKinds.length];
+  const variant = (chapter + slot) % enemyKinds.length;
+  const kind = enemyKinds[variant];
   const max = chapter >= 10 ? (rank === 'major' ? 54000 + (chapter - 10) * 54000 :
     rank === 'mid' ? 27000 + (chapter - 10) * 12000 : 3000 + slot * 280) :
     boss ? (rank === 'mid' ? 62 + chapter * 15 : 88 + chapter * 18) : 24 + chapter * 6 + slot * 2;
   const homeX = chapter * span + spot;
   const homeY = optional ? (slot === 1 ? 62 : 146) : 104;
   return {
-    ...kind, name: rank === 'major' ? chapterInfo[chapter][1] : rank === 'mid' ? midBosses[chapter] : kind.name,
+    ...kind, variant, name: rank === 'major' ? chapterInfo[chapter][1] : rank === 'mid' ? midBosses[chapter] : kind.name,
     power: kind.power + chapter * 2 + (boss ? 5 : 0), max, hp: max,
     homeX, homeY, x: homeX, y: homeY, chapter, slot, boss, rank, optional, flash: 0
   };

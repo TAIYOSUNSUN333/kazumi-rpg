@@ -66,9 +66,9 @@ audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true)
 function save(explicit = false) {
   if (trialVitals) return false;
   const success = storage.write(saveKey, {
-    version: 5, x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 6, x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
-    weapon: player.weapon, armor: player.armor, party: player.party, checkpoint,
+    weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
     enemies: enemies.map(enemy => enemy.hp), shrines: shrines.map(shrine => shrine.solved),
     special: Math.max(0, specialAt - clock), joined, returning, done,
@@ -80,14 +80,13 @@ function save(explicit = false) {
 
 function load(data) {
   if (!data || typeof data !== 'object') return;
-  const current = data.version === 4 || data.version === 5;
-  ring = data.version === 5 && data.ring === true;
-  pots.forEach((pot, i) => { pot.broken = data.version === 5 && data.pots?.[i] === true; });
+  const current = [4, 5, 6].includes(data.version);
+  ring = [5, 6].includes(data.version) && data.ring === true;
+  pots.forEach((pot, i) => { pot.broken = [5, 6].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
   player.xp = numeric(data.xp, 0, 0, 1000000);
-  player.party = npcs.slice(1).map(npc => npc.name).filter(name =>
-    Array.isArray(data.party) && data.party.includes(name));
+  restoreCompanions(data);
   player.shards = numeric(modern ? data.shards : data.art, 0, 0, 100000);
   player.x = modern || oldMap ? numeric(data.x, 25, 0, limit) : 25;
   player.y = modern || oldMap ? numeric(data.y, 104, 44, 162) : 104;
@@ -243,6 +242,8 @@ function resume() {
 }
 function enterField() {
   mode = 'field';
+  companionTrail.x = player.x - 24;
+  companionTrail.y = player.y;
   cat.x = player.x - 18;
   cat.y = player.y;
   audio.setTrack(fieldTrack());
@@ -322,6 +323,7 @@ function openMenu() {
   else actions.push(
     ['保存', () => { save(true); resume(); }],
     ['装備', shop],
+    ['酒場', tavern, !nearTavern()],
     ['四天王の試練', openTrials, !joined],
     ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()],
     [returning && !done ? '自宅へ向かう' : '先へ進む', () => { guide(); resume(); }],
@@ -335,6 +337,7 @@ function openMenu() {
   panel('メニュー', [
     '武器 ' + equipped('weapon').name + '　防具 ' + equipped('armor').name,
     '薬草 ' + player.herbs + '　星の欠片 ' + player.shards,
+    nearTavern() || battle ? '' : '酒場は各章の野営地にある。',
     '仲間 ' + ([...player.party, ...(joined ? ['ソソ'] : [])].join('、') || 'なし')
   ], actions);
   settings();
@@ -627,6 +630,7 @@ function hurtEnemy(enemy, damage) {
   else addNumber(damage, enemy.x, enemy.y - 14, '#fff29a', true);
   if (enemy.hp) return;
   if (enemy.trial !== undefined) {
+    awardCompanion(60);
     clearedTrials.add(enemy.trial);
     leaveTrial();
     save();
@@ -639,6 +643,7 @@ function hurtEnemy(enemy, damage) {
   const xp = (enemy.boss ? 44 : 7) + enemy.chapter * (enemy.boss ? 4 : 2);
   const gold = (enemy.boss ? 32 : 6) + enemy.chapter;
   player.xp += xp;
+  awardCompanion(xp);
   player.gold += gold;
   player.herbs++;
   if (battle) {
@@ -725,6 +730,7 @@ function encounter(enemy, ambush) {
   glow = null;
   battle = {
     enemy, heroX: 163, enemyX: 447, age: 0, next: 0, strike: null, pattern: 0,
+    allyX: 131, allyNext: 0, allyAction: null, allyDodge: 0, allyGuard: 0, allyHit: 0, allyDefenseAt: 0,
     ambush, damageFlash: 0, catX: 130, catNext: 0, catStrikes: 0, catEffect: null, link: 0, burn: null, slowedUntil: 0, awakeSince: 0, superAwake: false
   };
   mode = 'battle';
@@ -837,10 +843,13 @@ function updateBattle(dt) {
   }
   if (joined) updateCat(dt);
   if (!battle || paused) return;
+  updateCompanion(dt);
+  if (!battle || paused) return;
   const strike = battle.strike;
   if (strike) {
     if (clock < strike.at) return;
     const distance = battle.heroX - battle.enemyX;
+    hurtCompanion(strike);
     if (joined && cat.hp > 0 && clock >= invulnerableUntil &&
         (strike.wave || Math.abs(battle.catX - battle.enemyX) <= strike.range)) {
       const damage = Math.max(240, strike.power * (enemy.trial !== undefined ? 132 : 90) - catForm().def);
@@ -875,7 +884,10 @@ function updateBattle(dt) {
     battle.next = clock + enemy.interval;
     return;
   }
-  const distance = battle.heroX - battle.enemyX;
+  const member = currentCompanion();
+  const allyDistance = battle.allyX - battle.enemyX;
+  const heroDistance = battle.heroX - battle.enemyX;
+  const distance = member?.hp > 0 && Math.abs(allyDistance) + 8 < Math.abs(heroDistance) ? allyDistance : heroDistance;
   const direction = Math.sign(distance) || -1;
   const enraged = enemy.boss && enemy.hp <= enemy.max / 2;
   const final = enemy.rank === 'major' && enemy.chapter === last;
@@ -904,6 +916,7 @@ function updateBattle(dt) {
 const closeTo = (x, y, radius) => Math.hypot(player.x - x, player.y - y) < radius;
 
 function updateField(dt) {
+  followCompanion(dt);
   const chapter = chapterOf(player.x);
   if (joined) {
     const dx = player.x - cat.x, dy = player.y - cat.y;
@@ -926,12 +939,19 @@ function updateField(dt) {
   }
   audio.setTrack(fieldTrack());
   if (returning && !done && closeTo(25, 104, 14)) return arriveHome();
-  for (const npc of npcs) {
-    if (npc.visited || !closeTo(npc.x, 104, 13)) continue;
-    npc.visited = true;
-    if (npc !== npcs[0]) player.party.push(npc.name);
-    say(npc.name + ' ' + npc.line + (npc === npcs[0] ? '' : '　仲間に加わった。'));
-    save();
+  const nearbyNpc = npcs.find(npc => npc.name !== player.party[0] && closeTo(npc.x, 104, 13));
+  if (nearbyNpc !== contactNpc) {
+    contactNpc = nearbyNpc;
+    if (nearbyNpc) {
+      nearbyNpc.visited = true;
+      if (companionProfiles[nearbyNpc.name]) {
+        destination = null;
+        recruitment(nearbyNpc);
+        return;
+      }
+      say(nearbyNpc.name + ' ' + nearbyNpc.line);
+      save();
+    }
   }
   for (const gem of gems) {
     if (!gem.on || !closeTo(gem.x, gem.row, 11)) continue;
@@ -1008,6 +1028,15 @@ function updateUI() {
     $('enemy-status').textContent = battle.enemy.name + '　HP ' + battle.enemy.hp + '/' + battle.enemy.max +
       (battle.enemy.rank === 'major' && battle.enemy.chapter === last ? '　第' + finalPhase(battle.enemy) + '形態' : '') +
       (battle.strike ? '　⚠ ' + battle.strike.label : '');
+  }
+  const member = currentCompanion();
+  $('companion-status').hidden = !member;
+  if (member) $('companion-status').textContent = member.name + ' Lv.' + companionLevel(member) +
+    '　HP ' + member.hp + '/' + companionHP(member) + '　MP ' + member.mp + '/' + companionMP(member);
+  $('enemy-hp').hidden = !battle;
+  if (battle) {
+    $('enemy-hp').max = battle.enemy.max;
+    $('enemy-hp').value = battle.enemy.hp;
   }
   $('magic').disabled = !ring || player.mp < starterRing.mp;
   $('awakening').hidden = !battle || !joined;

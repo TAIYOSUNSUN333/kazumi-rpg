@@ -65,10 +65,21 @@ button:disabled { opacity: .55; }
 #fade { position: absolute; inset: 0; z-index: 4; background: #0c0b17; opacity: 0; pointer-events: none; transition: opacity 120ms; }
 #fade[data-active=true] { opacity: 1; }
 #level { position: absolute; top: 27%; left: 50%; transform: translateX(-50%); color: #fff0a5; font-size: clamp(19px, 6vh, 34px); font-weight: bold; text-shadow: 0 2px 8px #582949; pointer-events: none; }
-@media (orientation: portrait) and (pointer: coarse) {
-  #portrait { display: block; }
-  canvas { object-fit: contain; }
-  #message { bottom: 153px; left: 8px; right: 8px; }
+#companion-status { color: #c8e8cf; }
+#enemy-hp { display: block; width: 100%; height: 7px; accent-color: #f78e88; }
+@media (orientation: portrait) {
+  #game { background: radial-gradient(ellipse at 50% 53%, #455569, #22243c 64%, #191a2d); }
+  #hud { top: max(8px, env(safe-area-inset-top)); font-size: 12px; max-width: calc(100% - 16px); }
+  #menu { top: auto; bottom: max(12px, env(safe-area-inset-bottom)); left: 50%; right: auto; transform: translateX(-50%); }
+  #dpad, #actions { bottom: max(64px, calc(env(safe-area-inset-bottom) + 57px)); }
+  #portrait { display: block; top: auto; bottom: max(61px, calc(env(safe-area-inset-bottom) + 54px)); left: 50%; right: auto; transform: translateX(-50%); max-width: 34%; text-align: center; pointer-events: none; }
+  canvas { position: absolute; top: 21%; height: 47%; }
+  #message { bottom: max(211px, calc(env(safe-area-inset-bottom) + 203px)); left: 8px; right: 8px; }
+  #panel { max-height: 71%; }
+}
+@media (orientation: portrait) and (max-width: 420px) {
+  #portrait { bottom: max(51px, calc(env(safe-area-inset-bottom) + 45px)); max-width: none; white-space: nowrap; font-size: 9px; }
+  #dpad, #actions { bottom: max(75px, calc(env(safe-area-inset-bottom) + 68px)); }
 }
 @media (prefers-reduced-motion: reduce) { #fade { transition: none; } }
 #awakening { color: #fff0ad; }
