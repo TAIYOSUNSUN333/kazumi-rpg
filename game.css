@@ -145,3 +145,32 @@ button:active, button[data-held=true] { background: linear-gradient(#927751,#544
 }
 .quality-setting { display: inline-flex; gap: 5px; align-items: center; margin: 4px 0 4px 10px; }
 .quality-setting select { min-height: 38px; min-width: 48px; color: #f6dfb8; background: #242c40; border: 1px solid #ac8e62; }
+#joystick {
+  position: absolute; left: max(10px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: clamp(88px, 27dvh, 116px); aspect-ratio: 1; border-radius: 50%;
+  touch-action: none; z-index: 1;
+  background: radial-gradient(circle,#435474bd 25%,#23324ac9 68%,#12192aa6 69%);
+  border: 1px solid #c6a56ebc; box-shadow: inset 0 0 10px #0009;
+}
+#stick-knob {
+  position: absolute; top: 50%; left: 50%; width: 42%; aspect-ratio: 1;
+  border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none;
+  background: radial-gradient(circle at 35% 28%, #8993a6, #3d4b65 60%, #202b41);
+  border: 1px solid #d9bf8c; box-shadow: 0 3px 8px #000a;
+}
+#game[data-battle=true] #actions { grid-template-columns: repeat(3, minmax(42px, auto)); }
+#game[data-battle=true] #actions button { padding-inline: 6px; font-size: clamp(12px, 3.4vw, 15px); }
+@media (orientation: portrait) {
+  #joystick { bottom: max(75px, calc(env(safe-area-inset-bottom) + 68px)); width: clamp(84px, 28vw, 116px); }
+}
+#stay-controls {
+  position: absolute; z-index: 3; bottom: max(14px, env(safe-area-inset-bottom));
+  left: 50%; transform: translateX(-50%); width: min(92%, 545px);
+  padding: 9px 12px; border: 1px solid #c19d65; border-radius: 10px;
+  background: #181b2eea; text-align: center;
+}
+#stay-caption { margin: 0 0 6px; color: #f5dfb5; }
+#stay-choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+#stay-choices:not(:empty) { margin-bottom: 5px; }
+#stay-skip { min-height: 44px; }

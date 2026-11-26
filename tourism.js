@@ -275,7 +275,7 @@ function photoPanel(id, back) {
   image.setAttribute('aria-label', region.sight + 'での' + photo.partner + 'との記念写真');
   image.className = 'postcard';
   const g = image.getContext('2d');
-  const assetIds = ['land-' + landscapeVariant(id), 'landmark-' + landmarkFor(region), 'actors', 'soso'];
+  const assetIds = [landscapeImage(id), 'landmark-' + landmarkFor(region), 'actors', 'soso'];
   function draw() {
     g.fillStyle = photo.night ? '#242d49' : '#9ed1d7';
     g.fillRect(0, 0, 360, 156);

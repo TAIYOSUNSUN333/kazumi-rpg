@@ -146,19 +146,16 @@ function awardCompanion(xp) {
   if (member) member.xp = Math.min(300000, member.xp + xp);
 }
 
-function companionInStrike(strike) {
-  const offset = battle.allyX - battle.enemyX;
-  return strike.wave || Math.sign(offset) === strike.direction && Math.abs(offset) <= strike.range + 5;
-}
-
 function hurtCompanion(strike) {
   const member = currentCompanion();
-  if (!member?.hp || !companionInStrike(strike) || battle.allyDodge > clock) return;
+  if (!member?.hp || !strikeContains(strike, actorPoint('ally'), arenaAlly.radius) || battle.allyDodge > clock) return;
   const damage = Math.max(1, Math.round((strike.power - companionProfiles[member.name].defense -
     (companionLevel(member) - 1) - member.gear) * (battle.allyGuard > clock ? .42 : 1)));
   member.hp = Math.max(0, member.hp - damage);
   battle.allyHit = clock + .18;
-  addNumber(damage, battle.allyX, 205, '#ffada6');
+  const away = directionTo(battle.allyX - strike.x, battle.allyY - strike.y);
+  if (battle.allyGuard <= clock) moveArena('ally', away.x, away.y, 9, [enemyBlocker()]);
+  addNumber(damage, battle.allyX, battleDepth(battle.allyY) - 40, '#ffada6');
 }
 
 function updateCompanion(dt) {
@@ -166,15 +163,17 @@ function updateCompanion(dt) {
   if (!member?.hp) return;
   const profile = companionProfiles[member.name];
   const warning = battle.strike;
-  if (warning && companionInStrike(warning) && warning.at - clock < .27 && clock >= battle.allyDefenseAt) {
+  if (warning && strikeContains(warning, actorPoint('ally'), arenaAlly.radius) && warning.at - clock < .27 && clock >= battle.allyDefenseAt) {
     battle.allyDefenseAt = clock + 3.4;
     if (profile.role === 'sword' || warning.wave) battle.allyGuard = clock + .38;
-    else battle.allyDodge = clock + .32;
+    else {
+      battle.allyDodge = clock + .32;
+      retreatFromStrike('ally', 42);
+    }
     return;
   }
   if (battle.allyGuard > clock || battle.allyDodge > clock) return;
-  const delta = battle.enemyX - battle.allyX;
-  const direction = Math.sign(delta);
+  const direction = directionTo(battle.enemyX - battle.allyX, battle.enemyY - battle.allyY);
   if (clock >= battle.allyNext && profile.role === 'heal' && member.mp >= 5 &&
       (player.hp < maxHP() * .68 || member.hp < companionHP(member) * .62)) {
     const heal = 16 + companionLevel(member) * 2;
@@ -187,15 +186,13 @@ function updateCompanion(dt) {
     return;
   }
   const magic = profile.role === 'magic' && member.mp >= 3;
-  const reach = magic ? profile.reach : 35;
-  if (Math.abs(delta) > reach) {
-    battle.allyX += direction * Math.min(profile.speed * dt, Math.abs(delta) - reach + 1);
-    return;
-  }
+  const reach = (magic ? profile.reach : 35) + battle.body.radius;
+  if (!closeOnEnemy('ally', dt, profile.speed, reach, true)) return;
   if (clock < battle.allyNext) return;
   battle.allyNext = clock + (magic ? 1.7 : 1.22);
   battle.allyAction = {kind:magic ? 'magic' : 'attack', until:clock + .29, direction};
   if (magic) member.mp -= 3;
   audio.play(magic ? 'magic' : 'attack');
-  hurtEnemy(battle.enemy, profile.power + (companionLevel(member) - 1) * 2 + member.gear * 3 + (magic ? 5 : 0));
+  battle.allyPressure = clock + 1.6;
+  positionalHit(actorPoint('ally'), profile.power + (companionLevel(member) - 1) * 2 + member.gear * 3 + (magic ? 5 : 0));
 }

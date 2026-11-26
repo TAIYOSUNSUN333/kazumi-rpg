@@ -125,15 +125,23 @@ function tickTown(dt) {
   for (let i = 0; i < periods; i++) townBank = Math.min(bankLimit, townBank + Math.floor(townBank / 1000));
 }
 
-function townResident(town) {
-  const home = town.chapter * span;
-  const dusk = townHour() >= 17 || townHour() < 7;
-  return {x:home + (dusk ? 95 : 128) + Math.sin(townSeconds * .8) * (dusk ? 18 : 46), y:dusk ? 131 : 83};
+function commuter(town, index = 0) {
+  const hour = townHour(), home = town.chapter * span;
+  const coastal = ['coast','river','water'].includes(prefectures[town.chapter].terrain);
+  const daytime = hour >= 7 && hour < 18;
+  const activity = !daytime ? '帰宅' : hour < 10 ? '買い物' : index === 1 ? (coastal ? '漁の支度' : '畑仕事') : '散策';
+  const center = daytime ? [128,191,237][index] : [95,53,149][index];
+  const swing = daytime ? 27 + index * 6 : 15;
+  return {x:home + center + Math.sin(townSeconds * (.52 + index * .09) + index) * swing,
+    y:(daytime ? [83,135,114][index] : [131,60,148][index]) + Math.sin(townSeconds * .41 + index) * 5,
+    activity, face:Math.cos(townSeconds * (.52 + index * .09) + index)};
 }
+
+function townResident(town) { return commuter(town); }
 
 function buildingBlocks(x, y) {
   return towns[chapterOf(x)].sites.some(site => Math.abs(site.x - x) < 19 &&
-    (site.upper ? y < 51 : y > 159));
+    (site.upper ? y > 32 && y < 51 : y > 159 && y < 175));
 }
 
 function roomFurniture(kind) {
@@ -185,7 +193,7 @@ function checkTownDoor() {
       townVisits[nearby.id] = (townVisits[nearby.id] || 0) + 1;
       resetJump();
       resume();
-      audio.setTrack('town' + nearby.chapter);
+      audio.setTrack(nearby.kind === 'inn' ? 'innEntry' : 'town' + nearby.chapter);
       save();
     }], ['入らない', resume]
   ]);
@@ -242,6 +250,8 @@ function townInteraction() {
     } else if (Math.hypot(interior.x - 320, interior.y - 100) <= 66) servicePanel();
     return;
   }
+  const fixture = nearbyFixture();
+  if (fixture) return useFixture(fixture);
   if (nearScenicSpot()) return tourPanel();
   const town = towns[chapterOf(player.x)];
   const resident = townResident(town);
@@ -260,6 +270,8 @@ function townActionLabel() {
     if (Math.hypot(interior.x - 320, interior.y - 100) <= 66) return '話す';
     return '';
   }
+  const fixture = nearbyFixture();
+  if (fixture) return fixture.kind === 'bench' ? 'ベンチ' : '自販機';
   if (nearScenicSpot()) return '観光案内';
   const town = towns[chapterOf(player.x)];
   const resident = townResident(town);
@@ -315,6 +327,7 @@ function servicePanel(note = '') {
   if (!interior) return;
   const {site} = interior;
   if (site.kind === 'regional') return dungeonPanel();
+  if (site.kind === 'inn') audio.setTrack('innDesk');
   const town = towns[site.chapter];
   const [name, keeper] = townTypes[site.kind];
   const services = [['室内を歩く', resume]];
@@ -343,19 +356,15 @@ function servicePanel(note = '') {
       buy('薬草 ×1', site.kind === 'store' ? 8 : 5, () => { player.herbs++; });
       if (site.kind === 'store') buy('特製弁当を食べる（HP +28）', 13, () => heal(28));
       break;
-    case 'inn':
-      services.push(['宿泊して翌朝へ（HP・MP全快）　12G', () => {
-        let conversation = '';
-        trade(12, () => {
-        const nextMorning = townDay() * 3600 + 6 * 150;
-        tickTown(nextMorning > townSeconds ? nextMorning - townSeconds : nextMorning + 3600 - townSeconds);
-        player.hp = maxHP(); player.mp = maxMP();
-        const companion = currentCompanion();
-        if (companion) { companion.hp = companionHP(companion); companion.mp = companionMP(companion); }
-        conversation = regionalInnTalk(site.chapter);
-        }, () => servicePanel(conversation));
-      }, player.gold < 12]);
+    case 'inn': {
+      const lodging = innProfile(site.chapter);
+      lines.push(lodging.name + '・' + lodging.style + '　24時間営業。',
+        lodging.modest ? '手ごろな価格で回復。' : lodging.cure ? '全回復し、足止めを解除。' :
+        lodging.blessing ? '全回復し、ゲーム内の翌朝まで攻撃力上昇。' :
+        lodging.special ? '全回復。眺めのよい客室で特別な会話を楽しめます。' : '宿泊するとHP・MPが全快。');
+      services.push(['宿泊する　' + lodging.price + 'G', beginStay, player.gold < lodging.price]);
       break;
+    }
     case 'food':
       const local = prefectures[site.chapter];
       lines.push('名物は' + local.dish + '。');

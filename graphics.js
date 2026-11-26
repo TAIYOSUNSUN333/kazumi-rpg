@@ -109,14 +109,20 @@ function coverArt(g, image, x, y, w, h, drift = 0) {
 
 function landscapeVariant(chapter, cave = false) {
   const region = prefectures[chapter];
+  const featured = {'東京都':8,'静岡県':9,'長崎県':10,'北海道':11};
+  if (!cave && Object.hasOwn(featured,region.name)) return featured[region.name];
   const southern = /沖縄|鹿児島|宮崎|長崎/.test(region.name);
   return cave ? 2 : southern && region.terrain === 'coast' ? 7 :
     region.terrain === 'river' ? 5 : region.terrain === 'sand' ? 6 :
     region.terrain === 'forest' && chapter > 6 ? 4 : artBackground[region.terrain];
 }
 
+function landscapeImage(chapter, cave = false) {
+  if (!cave && prefectures[chapter].name === '大阪府') return 'arena-market';
+  return 'land-' + landscapeVariant(chapter,cave);
+}
 function landscapeArt(g, chapter, camera, cave = false) {
-  const image = picture('land-' + landscapeVariant(chapter, cave));
+  const image = picture(landscapeImage(chapter,cave));
   if (!image) return false;
   g.save();
   g.imageSmoothingEnabled = artQuality !== 'low';
@@ -140,17 +146,25 @@ function ageLight(g) {
     hour < 8 ? '#f2ba7a33' : hour >= 17 ? '#d68c624d' : '#b1d1ce14';
   g.fillStyle = tint;
   g.fillRect(0, 0, 640, 360);
+  if (artQuality === 'low') return;
+  const day = hour >= 5 && hour < 20;
+  const cycle = day ? (hour - 5) / 15 : (hour >= 20 ? hour - 20 : hour + 4) / 9;
+  const x = 85 + Math.min(1, cycle) * 474, y = 110 - Math.sin(cycle * Math.PI) * 71;
+  lightAt(g,x,y,day ? 99 : 55,day ? '#fbd6974c' : '#c5cfff58');
+  if (!day) {
+    g.fillStyle = '#fff0d3ad';
+    g.beginPath();g.arc(x,y,8,0,6.283);g.fill();
+    for (let i=0;i<16;i++) g.fillRect((i * 139 + 17)%620,(i * 31 + 8)%114,1,1);
+  }
 }
 
 const weatherPoints = Array.from({length:72}, (_, i) => ({
   x: (i * 193 + 51) % 647, y: (i * 131 + 11) % 373, speed: (i * 29 % 41) + 20
 }));
-function skyEffects(g, chapter) {
+function skyEffects(g, chapter, forced) {
   if (artQuality === 'low') return;
-  const terrain = prefectures[chapter].terrain;
-  const phase = (townDay() * 7 + chapter * 3) % 11;
-  const weather = terrain === 'snow' ? 'snow' : phase < 2 ? 'rain' :
-    terrain === 'coast' || terrain === 'water' ? 'mist' : 'cloud';
+  const weather = forced || fieldWeather(chapter);
+  const wet = weather === 'rain' || weather === 'thunder';
   const time = artMotion.matches ? 0 : clock;
   if (weather === 'mist' || weather === 'cloud') {
     for (let i = 0; i < 3; i++) {
@@ -160,13 +174,17 @@ function skyEffects(g, chapter) {
     return;
   }
   g.save();
+  if (weather === 'thunder' && artQuality === 'high' && !artMotion.matches && time % 11 > 10.92) {
+    g.fillStyle = '#c3c6f329';
+    g.fillRect(0,0,640,360);
+  }
   g.fillStyle = weather === 'snow' ? '#f5f0e9bd' : '#bdccd886';
   const count = artQuality === 'high' ? 72 : 30;
   for (let i = 0; i < count; i++) {
     const point = weatherPoints[i];
     const x = ((point.x - time * point.speed * .28) % 652 + 652) % 652;
-    const y = (point.y + time * point.speed * (weather === 'rain' ? 3.7 : .88)) % 375;
-    g.fillRect(x, y, weather === 'snow' && i % 4 === 0 ? 2 : 1, weather === 'rain' ? 9 : 2);
+    const y = (point.y + time * point.speed * (wet ? 3.7 : .88)) % 375;
+    g.fillRect(x, y, weather === 'snow' && i % 4 === 0 ? 2 : 1, wet ? 9 : 2);
   }
   g.restore();
 }
@@ -218,4 +236,51 @@ function drawCinematicEffect(g, x, y, special = false) {
   }
   g.restore();
   lightAt(g, x, y, 90, special ? '#ffbc534c' : '#babdf343');
+}
+
+function arenaZoom() {
+  return battle.body.size >= 6 ? .82 : battle.body.size >= 3.5 ? .92 : 1;
+}
+
+function drawArenaBackdrop(kind, chapter) {
+  const art = picture('arena-' + kind);
+  ctx.fillStyle = '#1c243a';
+  ctx.fillRect(0,0,640,360);
+  if (art) coverArt(ctx,art,0,0,640,360,(battle.heroX - 320) * .034);
+  else landscapeArt(ctx,chapter,0,['cave','ruins','temple'].includes(kind));
+  const region = prefectures[chapter];
+  const season = Math.floor(townDay() / 30) % 4;
+  const daylight = townHour();
+  const indoor = ['cave','castle','temple','otherworld'].includes(kind);
+  if (!indoor) ageLight(ctx);
+  const floor = ctx.createLinearGradient(0,171,0,357);
+  floor.addColorStop(0,'#1b1d3000');
+  floor.addColorStop(.45,'#24243960');
+  floor.addColorStop(1,'#151929bf');
+  ctx.fillStyle = floor;
+  ctx.fillRect(0,171,640,186);
+  ctx.fillStyle = region.color + ['18','0e','29','35'][season];
+  ctx.fillRect(0,0,640,360);
+  if (!indoor) {
+    const motif = picture('landmark-' + landmarkFor(region));
+    if (motif && artQuality !== 'low' && ['forest','grass','market','city','coast','snow'].includes(kind)) {
+      ctx.globalAlpha = .69;
+      ctx.drawImage(motif,23,115,75,78);
+      ctx.globalAlpha = 1;
+    }
+    skyEffects(ctx,chapter,kind === 'snow' ? 'snow' : null);
+    if (daylight >= 6 && daylight < 17) lightAt(ctx,470,72,128,'#ffe1a44c');
+    if (kind === 'coast') {
+      for (let row=0;row<4;row++) {
+        const drift = artMotion.matches ? 0 : Math.sin(clock * 1.25 + row) * 16;
+        ctx.fillStyle = '#e5f2ee6e';
+        ctx.fillRect(50 + row * 137 + drift,156 + row * 6,48,1);
+      }
+    }
+  } else if (kind === 'volcano' || kind === 'temple') {
+    lightAt(ctx,499,143,134,kind === 'volcano' ? '#f0724e53' : '#ffd78f53');
+  }
+  ctx.fillStyle = '#1c21359e';
+  ctx.fillRect(269,12,102,19);
+  label(region.name,320,26,'#efd7a8',11);
 }

@@ -49,13 +49,14 @@ let flashUntil = 0;
 let levelUntil = 0;
 let burstUntil = 0;
 let victoryUntil = 0;
+let defeatedFoe = null;
 let messageUntil = 0;
 const numbers = [];
 const level = () => 1 + Math.floor(Math.sqrt(player.xp / 25));
 const nextXp = () => level() ** 2 * 25;
 const maxHP = () => 100 + (level() - 1) * 13;
 const maxMP = () => 30 + (level() - 1) * 4;
-const attackPower = () => 10 + (level() - 1) * 3 + equipped('weapon').bonus + (player.party.includes('一郎') ? 2 : 0);
+const attackPower = () => 10 + (level() - 1) * 3 + equipped('weapon').bonus + (townSeconds < innBuffUntil ? 4 : 0) + (player.party.includes('一郎') ? 2 : 0);
 const defense = () => 5 + (level() - 1) * 2 + equipped('armor').bonus + (player.party.includes('クルミ') ? 1 : 0);
 function equipped(type) {
   return prefectures[regionalGear[type]]?.[type] || trials[trialGear[type]]?.reward || equipment[type][player[type]];
@@ -66,11 +67,12 @@ const unlocked = enemy => !enemy.boss || (shrines[enemy.chapter].solved &&
 
 const prefs = storage.read('kazumi-audio');
 audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true);
+audio.setMix(numeric(prefs?.music, 85, 0, 100) / 100, numeric(prefs?.effects, 80, 0, 100) / 100);
 
 function save(explicit = false) {
   if (trialVitals) return false;
   const success = storage.write(saveKey, {
-    version: 9, tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 9, inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
@@ -94,7 +96,8 @@ function load(data) {
   restoreCompanions(data);
   player.shards = numeric(modern ? data.shards : data.art, 0, 0, 100000);
   player.x = modern || oldMap ? numeric(data.x, 25, 0, limit) : 25;
-  player.y = modern || oldMap ? numeric(data.y, 104, 44, 162) : 104;
+  player.y = modern || oldMap ? numeric(data.y, 104, fieldTop, fieldBottom) : 104;
+  if (waterBlocks(player.x, player.y)) player.y = 54;
   player.gold = modern ? numeric(data.gold, 0, 0, bankLimit) : Math.floor(player.xp / 3);
   player.herbs = modern ? numeric(data.herbs, 0, 0, 10000) : 0;
   player.weapon = numeric(data.weapon, 0, 0, equipment.weapon.length - 1);
@@ -151,6 +154,7 @@ function load(data) {
     }
   }
   loadTowns(data.town);
+  loadInn(data.inn);
   loadTourism(data.tourism);
   if (data.version !== 9) {
     for (let chapter = 0; chapter <= Math.min(originalFinal, checkpoint); chapter++) tourismFor(chapter).visited = true;
@@ -170,19 +174,52 @@ const keys = new Set();
 const keyActions = {
   ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
   KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down',
-  Space: 'attack', ShiftLeft: 'dodge', ShiftRight: 'dodge', KeyX: 'special', KeyZ: 'jump', KeyC: 'magic'
+  Space: 'attack', ShiftLeft: 'dodge', ShiftRight: 'dodge', KeyX: 'special', KeyZ: 'jump', KeyC: 'magic', KeyQ: 'guard'
 };
 const controls = [...document.querySelectorAll('[data-hold]')];
+const joystick = {id:null,x:0,y:0};
+function resetJoystick() {
+  joystick.id = null;
+  joystick.x = joystick.y = 0;
+  $('stick-knob').style.transform = 'translate(-50%, -50%)';
+}
+function tiltJoystick(event) {
+  const box = $('joystick').getBoundingClientRect();
+  const x = (event.clientX - box.left - box.width / 2) / (box.width * .33);
+  const y = (event.clientY - box.top - box.height / 2) / (box.height * .33);
+  const length = Math.hypot(x,y);
+  joystick.x = length < .13 ? 0 : x / Math.max(1,length);
+  joystick.y = length < .13 ? 0 : y / Math.max(1,length);
+  $('stick-knob').style.transform = 'translate(-50%, -50%) translate(' + joystick.x * box.width * .27 +
+    'px, ' + joystick.y * box.height * .27 + 'px)';
+}
+$('joystick').onpointerdown = event => {
+  if (!battle || paused || joystick.id !== null || event.button !== 0) return;
+  event.preventDefault();
+  audio.unlock();
+  joystick.id = event.pointerId;
+  event.currentTarget.setPointerCapture(event.pointerId);
+  tiltJoystick(event);
+};
+$('joystick').onpointermove = event => {
+  if (event.pointerId === joystick.id) tiltJoystick(event);
+};
+for (const type of ['pointerup','pointercancel','lostpointercapture']) {
+  $('joystick').addEventListener(type, event => {
+    if (event.pointerId === joystick.id) resetJoystick();
+  });
+}
 const pressed = action => keys.has(action) || [...held.values()].includes(action);
 function clearInput() {
   keys.clear();
   held.clear();
+  resetJoystick();
   controls.forEach(button => { delete button.dataset.held; });
 }
 
 function perform(action) {
   if (interior || paused || (mode !== 'field' && mode !== 'battle') || (battle && battle.age < .4)) return;
-  if (action === 'attack') swing();
+  if (action === 'attack' && !pressed('guard')) swing();
   if (action === 'dodge') dodge();
   if (action === 'special') special();
   if (action === 'jump') jump();
@@ -234,7 +271,8 @@ document.addEventListener('pointerdown', () => audio.unlock(), {once: true, capt
 document.addEventListener('keydown', () => audio.unlock(), {once: true, capture: true});
 
 function fieldTrack() {
-  if (interior) return interior.site.kind === 'regional' ? 'dungeon' : 'town' + interior.site.chapter;
+  if (interior) return interior.site.kind === 'inn' ? 'innEntry' :
+    interior.site.kind === 'regional' ? 'dungeon' : 'town' + interior.site.chapter;
   const chapter = chapterOf(player.x);
   if (player.x - chapter * span >= 0 && player.x - chapter * span < 355) return 'town' + chapter;
   return [1, 3, 6, 9, 11].includes(chapter) ? 'dungeon' : 'field';
@@ -311,6 +349,7 @@ function showTitle() {
     if (done) arriveHome();
     else {
       enterField();
+      if (innPending) resumeInn();
       if (shrineDefeated) {
         player.hp = 0;
         defeat('一美は倒れた', '石碑の反動で一美は力尽きた。');
@@ -319,27 +358,34 @@ function showTitle() {
   }]);
   panel('一美のスター街道', [
     '愛猫ソソをさらわれた一美は、やがて47都道府県を巡る旅に出る。',
-    '十字キーで移動。剣で敵を倒すか、接触して戦闘へ。キーボードは矢印キー、Spaceで攻撃、Shiftで回避、Zでジャンプ、Cで魔法、Xで必殺技、Eで街の人や出口を調べる。'
+    '十字キーで移動。剣で敵を倒すか、接触して戦闘へ。キーボードは矢印キー、Spaceで攻撃、Shiftで回避、Qで防御、Zでジャンプ、Cで魔法、Xで必殺技、Eで街の人や出口を調べる。'
   ], actions);
 }
 
 function settings() {
-  const volume = document.createElement('input');
-  volume.type = 'range';
-  volume.min = '0';
-  volume.max = '100';
-  volume.value = Math.round(audio.volume * 100);
-  volume.oninput = () => updateAudio(Number(volume.value) / 100, audio.muted);
-  const label = document.createElement('label');
-  label.append('音量 ', volume);
-  $('panel-body').append(label);
+  for (const [title, id] of [['BGM','musicVolume'], ['効果音','effectsVolume']]) {
+    const volume = document.createElement('input');
+    volume.type = 'range';
+    volume.min = '0';
+    volume.max = '100';
+    volume.value = Math.round(audio[id] * 100);
+    volume.oninput = () => {
+      audio[id] = Number(volume.value) / 100;
+      audio.setMix(audio.musicVolume, audio.effectsVolume);
+      updateAudio(audio.volume, audio.muted);
+    };
+    const label = document.createElement('label');
+    label.append(title + ' ', volume);
+    $('panel-body').append(label);
+  }
   graphicsSettings();
 }
 function updateAudio(volume, muted) {
   audio.setVolume(volume, muted);
   $('mute').textContent = muted ? '音を出す' : '消音';
   $('mute').setAttribute('aria-pressed', String(muted));
-  storage.write('kazumi-audio', {volume: Math.round(volume * 100), muted});
+  storage.write('kazumi-audio', {volume:Math.round(volume * 100), muted,
+    music:Math.round(audio.musicVolume * 100), effects:Math.round(audio.effectsVolume * 100)});
 }
 $('mute').onclick = () => {
   audio.unlock();
@@ -349,7 +395,7 @@ $('mute').textContent = audio.muted ? '音を出す' : '消音';
 $('mute').setAttribute('aria-pressed', String(audio.muted));
 
 function openMenu() {
-  if (quizOpen || shrineDefeated) return;
+  if (innScene || quizOpen || shrineDefeated) return;
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
   const actions = [['戻る', resume]];
@@ -548,12 +594,8 @@ function movePlayer(dx, dy, distance) {
   if (interior) return moveInRoom(dx, dy, distance);
   if (!dx && !dy) return;
   if (battle) {
-    if (dx) {
-      player.facing = {x: Math.sign(dx), y: 0};
-      const next = clamp(battle.heroX + dx * distance, 25, 615);
-      const crossing = (battle.heroX - battle.enemyX) * (next - battle.enemyX) <= 0;
-      battle.heroX = crossing ? battle.enemyX + Math.sign(battle.heroX - battle.enemyX) * 14 : next;
-    }
+    player.facing = directionTo(dx, dy, player.facing);
+    moveArena('hero', dx, dy, distance, [enemyBlocker()]);
     return;
   }
   const magnitude = Math.hypot(dx, dy);
@@ -564,9 +606,9 @@ function movePlayer(dx, dy, distance) {
   const boundary = returning ? limit : !shrines[chapter].solved ? shrines[chapter].x + 19 :
     gate.hp ? gate.homeX + 17 : limit;
   const nextX = clamp(player.x + player.facing.x * distance, 0, boundary);
-  const nextY = clamp(player.y + player.facing.y * distance, 44, 162);
-  if (!buildingBlocks(nextX, player.y)) player.x = nextX;
-  if (!buildingBlocks(player.x, nextY)) player.y = nextY;
+  const nextY = clamp(player.y + player.facing.y * distance, fieldTop, fieldBottom);
+  if (!buildingBlocks(nextX, player.y) && !waterBlocks(nextX, player.y)) player.x = nextX;
+  if (!buildingBlocks(player.x, nextY) && !waterBlocks(player.x, nextY)) player.y = nextY;
 }
 
 function resetJump() {
@@ -612,11 +654,14 @@ function castMagic() {
   const damage = Math.max(1, Math.floor(attackPower() * .35));
   audio.play('magic');
   glow = {until: clock + .28, field: !battle, x: battle ? battle.heroX : player.x,
-    y: battle ? 220 - jumpHeight : player.y + 82 - jumpHeight,
-    dx: player.facing.x, dy: battle ? 0 : player.facing.y};
+    y: battle ? battleDepth(battle.heroY) - 27 - jumpHeight : fieldY(player.x,player.y) - 14 - jumpHeight,
+    dx: player.facing.x, dy: battle ? player.facing.y * .68 : player.facing.y};
   if (battle) {
-    const delta = battle.enemyX - battle.heroX;
-    if (Math.abs(delta) <= starterRing.reach && Math.sign(delta) === player.facing.x) hurtEnemy(battle.enemy, damage);
+    const origin = actorPoint('hero');
+    if (aimHitsEnemy(origin, player.facing, starterRing.reach, 19)) {
+      battle.heroPressure = clock + 1.4;
+      positionalHit(origin, damage);
+    }
     return;
   }
   const target = activeEnemies(chapterOf(player.x)).filter(enemy => enemy.hp && unlocked(enemy) &&
@@ -639,8 +684,9 @@ function swing() {
   swingKind = airborne ? 'air' : level() >= 9 ? 'afterimage' : burden >= 2 ? 'heavy' : 'ground';
   audio.play(airborne ? 'air' : 'attack');
   if (battle) {
-    const distance = battle.enemyX - battle.heroX;
-    if (Math.abs(distance) <= reach && Math.sign(distance) === player.facing.x) {
+    const origin = actorPoint('hero');
+    if (aimHitsEnemy(origin, player.facing, reach, 19)) {
+      battle.heroPressure = clock + 1.4;
       const coordinated = joined && battle.link > clock;
       const damage = coordinated ? power + Math.ceil(catForm().atk * .85) : power;
       if (coordinated) {
@@ -648,7 +694,7 @@ function swing() {
         audio.play('holy');
         say('連携攻撃・星爪斬！', 1.5);
       }
-      hurtEnemy(battle.enemy, battle.superAwake ? damage + Math.ceil(battle.enemy.max * .025) : damage);
+      positionalHit(origin, battle.superAwake ? damage + Math.ceil(battle.enemy.max * .025) : damage);
     }
     return;
   }
@@ -701,12 +747,13 @@ function special() {
 function addNumber(text, x, y, color, field = false) {
   numbers.push({text: String(text), x, y, color, field, expires: clock + .7});
 }
-function hurtEnemy(enemy, damage) {
+function hurtEnemy(enemy, damage, position = '') {
   if (isFinalBoss(enemy)) {
     const boundary = Math.ceil(enemy.max * (3 - finalPhase(enemy)) / 3);
     enemy.hp = Math.max(boundary, enemy.hp - damage);
     if (boundary && enemy.hp === boundary && battle) {
       battle.pattern = 0;
+      battle.body = combatBody(enemy);
       battle.strike = null;
       battle.next = clock + 1.15;
       burstUntil = clock + .55;
@@ -715,9 +762,16 @@ function hurtEnemy(enemy, damage) {
     }
   } else enemy.hp = Math.max(0, enemy.hp - damage);
   enemy.flash = clock + .16;
-  if (battle) addNumber(damage, battle.enemyX, 174, '#fff29a');
+  if (battle) {
+    addNumber(position ? position + ' ' + damage : damage, battle.enemyX, battleDepth(battle.enemyY) - 53, '#fff29a');
+    battle.enemyHit = clock + .20;
+  }
   else addNumber(damage, enemy.x, enemy.y - 14, '#fff29a', true);
   if (enemy.hp) return;
+  if (battle) {
+    defeatedFoe = {enemy, x:battle.enemyX, y:battleDepth(battle.enemyY), scale:battle.body.size * depthScale(battle.enemyY),
+      until:clock + .67, chapter:chapterOf(player.x)};
+  }
   monsterDex.add(enemy.name);
   victoryUntil = clock + 1.1;
   if (enemy.hiddenRegion !== undefined) {
@@ -795,15 +849,19 @@ function hurtEnemy(enemy, damage) {
   save();
 }
 
-function hurtPlayer(power) {
+function hurtPlayer(power, strike) {
   if (clock < invulnerableUntil) return;
-  const guarding = joined && cat.hp > 0 && player.hp <= maxHP() * .3 && Math.abs(battle.catX - battle.heroX) < 32;
-  const damage = Math.max(1, Math.ceil((power - defense()) * (guarding ? .5 : 1)));
+  const guarding = joined && cat.hp > 0 && player.hp <= maxHP() * .3 && arenaDistance(actorPoint('cat'), actorPoint('hero')) < 32;
+  const facing = strike && directionTo(strike.x - battle.heroX, strike.y - battle.heroY);
+  const blocked = pressed('guard') && (!strike || facing.x * player.facing.x + facing.y * player.facing.y >= -.18);
+  const damage = Math.max(1, Math.ceil((power - defense()) * (guarding ? .5 : 1) * (blocked ? .36 : 1)));
   player.hp = Math.max(0, player.hp - damage);
   flashUntil = clock + .2;
   invulnerableUntil = clock + .22;
   audio.play('hit');
-  addNumber(damage, battle.heroX, 190, '#ff9a9a');
+  if (strike?.kind === 'stomp' && !blocked) footingUntil = clock + 65;
+  if (strike && !blocked) moveArena('hero', -facing.x, -facing.y, battle.body.size > 3 ? 18 : 9, [enemyBlocker()]);
+  addNumber(blocked ? '防御 ' + damage : damage, battle.heroX, battleDepth(battle.heroY) - 48, '#ff9a9a');
   if (!player.hp) defeat('一美は倒れた');
 }
 
@@ -839,17 +897,15 @@ function encounter(enemy, ambush) {
   resetCat();
   resetJump();
   glow = null;
-  battle = {
-    enemy, heroX: 163, enemyX: 447, age: 0, next: 0, strike: null, pattern: 0,
-    allyX: 131, allyNext: 0, allyAction: null, allyDodge: 0, allyGuard: 0, allyHit: 0, allyDefenseAt: 0,
-    ambush, damageFlash: 0, catX: 130, catNext: 0, catStrikes: 0, catEffect: null, link: 0, burn: null, slowedUntil: 0, awakeSince: 0, superAwake: false
-  };
+  battle = createBattle(enemy, ambush);
+  defeatedFoe = null;
   mode = 'battle';
   player.facing = {x: 1, y: 0};
   swingUntil = clock;
   invulnerableUntil = clock;
   audio.play('encounter');
-  audio.setTrack(enemy.boss ? 'boss' : 'battle');
+  audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
+    enemy.rank === 'mid' ? 'midboss' : enemy.boss ? 'boss' : 'battle');
   say(ambush ? '背後から接触された！ 敵の先制攻撃。' : enemy.name + 'と遭遇した。');
 }
 
@@ -908,17 +964,21 @@ function updateCat(dt) {
   }
   if (!cat.hp) return;
   const form = catForm();
-  const distance = battle.enemyX - battle.catX;
-  const reach = [25, 38, 42, 46, 110, 150][cat.form];
-  if (player.hp <= maxHP() * .3) {
-    const guardX = battle.heroX + Math.sign(battle.enemyX - battle.heroX) * 12;
-    battle.catX += clamp(guardX - battle.catX, -form.speed * dt, form.speed * dt);
-    if (Math.abs(distance) > reach) return;
-  }
-  if (Math.abs(distance) > reach) {
-    battle.catX += Math.sign(distance) * Math.min(Math.abs(distance) - reach, form.speed * dt);
+  const reach = [25, 38, 42, 46, 110, 150][cat.form] + battle.body.radius;
+  if (battle.strike && battle.strike.at - clock < .22 && clock >= battle.catDefenseAt &&
+      strikeContains(battle.strike, actorPoint('cat'), arenaCat.radius)) {
+    battle.catDefenseAt = clock + 3.6;
+    battle.catDodge = clock + .30;
+    retreatFromStrike('cat', 36);
     return;
   }
+  if (clock < battle.catDodge) return;
+  if (player.hp <= maxHP() * .3) {
+    const hero = actorPoint('hero'), me = actorPoint('cat');
+    const guard = directionTo(battle.enemyX - hero.x, battle.enemyY - hero.y);
+    moveArena('cat', hero.x + guard.x * 15 - me.x, hero.y + guard.y * 15 - me.y, form.speed * dt, [enemyBlocker()]);
+    if (arenaDistance(actorPoint('cat'), actorPoint('enemy')) > reach) return;
+  } else if (!closeOnEnemy('cat', dt, form.speed * .71, reach, true)) return;
   if (clock < battle.catNext) return;
   const holy = ++battle.catStrikes % 4 === 0 && cat.mp >= 80;
   if (holy) {
@@ -943,7 +1003,8 @@ function updateCat(dt) {
     cat.hp = Math.min(form.hp, cat.hp + drained);
   }
   if (!holy && cat.form === 5) damage += Math.ceil(base * .3);
-  hurtEnemy(battle.enemy, damage);
+  battle.catPressure = clock + 1.55;
+  positionalHit(actorPoint('cat'), damage);
 }
 
 function updateBattle(dt) {
@@ -962,13 +1023,12 @@ function updateBattle(dt) {
   const strike = battle.strike;
   if (strike) {
     if (clock < strike.at) return;
-    const distance = battle.heroX - battle.enemyX;
     hurtCompanion(strike);
-    if (joined && cat.hp > 0 && clock >= invulnerableUntil &&
-        (strike.wave || Math.abs(battle.catX - battle.enemyX) <= strike.range)) {
+    if (joined && cat.hp > 0 && clock >= battle.catDodge &&
+        strikeContains(strike, actorPoint('cat'), arenaCat.radius)) {
       const damage = Math.max(240, strike.power * (enemy.trial !== undefined ? 132 : 90) - catForm().def);
       cat.hp = Math.max(0, cat.hp - damage);
-      addNumber(damage, battle.catX, 209, '#ff9a9a');
+      addNumber(damage, battle.catX, battleDepth(battle.catY) - 35, '#ff9a9a');
       if (!cat.hp) return defeat('ソソは倒れた');
       const ratio = cat.hp / catForm().hp;
       if (cat.form < 5) {
@@ -990,41 +1050,20 @@ function updateBattle(dt) {
         }
       }
     }
-    if (strike.wave || (jumpHeight < 18 && Math.sign(distance) === strike.direction && Math.abs(distance) <= strike.range + 5)) {
-      hurtPlayer(strike.power);
+    if (strikeContains(strike, actorPoint('hero'), arenaHero.radius) && (strike.wave || jumpHeight < 18)) {
+      hurtPlayer(strike.power, strike);
     }
+    if (strike.kind === 'rush') {
+      moveArena('enemy', strike.direction.x, strike.direction.y, 22, [heroBlocker()]);
+    }
+    battle.impact = {...strike, until:clock + .45, strong:battle.body.size >= 2.8};
+    if (battle.impact.strong) audio.play('quake');
     battle.damageFlash = clock + .17;
     battle.strike = null;
     battle.next = clock + enemy.interval;
     return;
   }
-  const member = currentCompanion();
-  const allyDistance = battle.allyX - battle.enemyX;
-  const heroDistance = battle.heroX - battle.enemyX;
-  const distance = member?.hp > 0 && Math.abs(allyDistance) + 8 < Math.abs(heroDistance) ? allyDistance : heroDistance;
-  const direction = Math.sign(distance) || -1;
-  const enraged = enemy.boss && enemy.hp <= enemy.max / 2;
-  const final = isFinalBoss(enemy);
-  const phase = final ? finalPhase(enemy) : 1;
-  const sequence = enemy.pattern || (final ? [['bite', 'slow'], ['rush', 'wave'], ['wave', 'rush', 'wave']][phase - 1] :
-    enemy.rank === 'mid' ? ['slow', 'bite'] : bossPatterns[enemy.chapter % bossPatterns.length]);
-  const pattern = enemy.boss ? sequence[battle.pattern % sequence.length] : 'bite';
-  const move = attackPatterns[pattern];
-  const wave = pattern === 'wave' && (phase === 3 || enemy.trial !== undefined);
-  const range = enemy.range + move.reach;
-  if ((!wave && Math.abs(distance) > range) || clock < battle.next) {
-    if (Math.abs(distance) > range - 3) {
-      battle.enemyX += direction * Math.min(enemy.speed * dt * (enraged ? 1.35 : 1) * (clock < battle.slowedUntil ? .55 : 1), Math.abs(distance) - 14);
-    }
-    return;
-  }
-  const label = wave ? '星砕き・全域' : move.label;
-  battle.strike = {
-    label, direction, range, wave, at: clock + move.lead,
-    power: enemy.power + move.extra + (phase - 1) * 8
-  };
-  battle.pattern++;
-  if (enemy.boss) say(label + 'の構え。回避でかわそう。', 1.5);
+  advanceEnemy(dt);
 }
 
 const closeTo = (x, y, radius) => Math.hypot(player.x - x, player.y - y) < radius;
@@ -1117,11 +1156,13 @@ function update(dt) {
     return;
   }
   updateJump(dt);
-  const dx = Number(pressed('right')) - Number(pressed('left'));
-  const dy = Number(pressed('down')) - Number(pressed('up'));
-  if (dx || (!battle && dy)) {
+  const dx = Number(pressed('right')) - Number(pressed('left')) + (battle ? joystick.x : 0);
+  const dy = Number(pressed('down')) - Number(pressed('up')) + (battle ? joystick.y : 0);
+  if (dx || dy) {
     destination = null;
-    movePlayer(dx, dy, dt * (battle ? 142 : 79));
+    const pace = battle ? 142 * Math.min(1, Math.hypot(dx, dy)) * (pressed('guard') ? .57 : 1) : 79;
+    const footing = clock < footingUntil ? .82 : 1;
+    movePlayer(dx, dy, dt * pace * footing);
   } else if (!battle && destination) {
     const x = destination.x - player.x;
     const y = destination.y - player.y;
@@ -1130,7 +1171,7 @@ function update(dt) {
     else movePlayer(x, y, Math.min(distance, dt * (returning ? 390 : 83)));
   }
   if (interior) return;
-  if (pressed('attack')) swing();
+  if (pressed('attack') && !pressed('guard')) swing();
   if (paused) return;
   if (battle) updateBattle(dt);
   else updateField(dt);
@@ -1138,6 +1179,11 @@ function update(dt) {
 
 function updateUI() {
   const chapter = chapterOf(player.x);
+  $('game').dataset.battle = String(Boolean(battle));
+  $('pause').hidden = Boolean(innScene) || mode === 'title' || mode === 'home';
+  $('dpad').hidden = Boolean(innScene || battle) || mode === 'title' || mode === 'home';
+  $('joystick').hidden = !battle;
+  $('guard').hidden = !battle;
   const action = townActionLabel();
   $('interact').hidden = !action;
   $('interact').textContent = action;
@@ -1145,7 +1191,7 @@ function updateUI() {
   $('town-clock').hidden = mode !== 'field' || Boolean(battle);
   $('town-clock').textContent = (interior || player.x - chapter * span < 355 ? towns[chapter].name + '　' : '') + townTime();
   $('location').textContent = interior ? townTypes[interior.site.kind][0] : trialVitals ? (battle?.enemy.hiddenRegion !== undefined ? '隠しダンジョン' : '四天王の闘技場') : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
-  $('vitals').textContent = 'Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP();
+  $('vitals').textContent = 'Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP() + (clock < footingUntil ? '　足止め' : '');
   $('progress').textContent = '経験値 ' + player.xp + '/' + nextXp() + '（あと' + (nextXp() - player.xp) + '）　' + player.gold + 'G　攻' + attackPower() + ' / 防' + defense();
   $('enemy-status').hidden = !battle;
   if (battle) {

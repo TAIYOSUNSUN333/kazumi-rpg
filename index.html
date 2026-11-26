@@ -14,6 +14,9 @@
   <script defer src="towns.js"></script>
   <script defer src="tourism.js"></script>
   <script defer src="graphics.js"></script>
+  <script defer src="battlefield.js"></script>
+  <script defer src="inn.js"></script>
+  <script defer src="terrain.js"></script>
   <script defer src="game.js"></script>
   <script defer src="render.js"></script>
 </head>
@@ -43,8 +46,12 @@
       <button data-hold="right" aria-label="右へ">→</button>
       <button data-hold="down" aria-label="下へ">↓</button>
     </nav>
+    <div id="joystick" role="group" aria-label="戦闘の移動（ジョイスティック）" hidden>
+      <span id="stick-knob" aria-hidden="true"></span>
+    </div>
     <nav id="actions" aria-label="アクション" hidden>
       <button data-hold="attack">攻撃</button>
+      <button data-hold="guard" id="guard" hidden>防御</button>
       <button data-hold="dodge">回避</button>
       <button data-hold="jump">ジャンプ</button>
       <button id="magic" data-hold="magic" disabled>魔法</button>
@@ -55,6 +62,11 @@
       <div id="panel-body"></div>
       <div id="panel-buttons"></div>
     </section>
+    <aside id="stay-controls" hidden aria-label="宿泊">
+      <p id="stay-caption" role="status"></p>
+      <div id="stay-choices"></div>
+      <button id="stay-skip">宿泊演出をスキップ</button>
+    </aside>
     <div id="quiz-flash" aria-hidden="true"></div>
     <div id="fade" aria-hidden="true"></div>
     <div id="level" aria-hidden="true"></div>

@@ -52,10 +52,10 @@ function drawActor(name, x, y, scale, face, pose) {
 }
 
 function hero(x, y, scale, face) {
-  const moving = Boolean(destination) || ['left','right','up','down'].some(pressed);
+  const moving = Boolean(destination) || Boolean(battle && joystick.id !== null) || ['left','right','up','down'].some(pressed);
   const pose = !player.hp ? 8 : clock < flashUntil ? 5 : clock < swingUntil ? 3 :
     glow && clock < glow.until ? 6 : jumpHeight > 2 ? 2 :
-    battle && clock < invulnerableUntil ? 4 : clock < victoryUntil ? 7 :
+    battle && (pressed('guard') || clock < invulnerableUntil) ? 4 : clock < victoryUntil ? 7 :
     moving ? 1 + Math.floor(clock * 10) % 2 : 0;
   drawActor('一美', x, y, scale, face, pose);
   if (player.armor || regionalGear.armor !== null || trialGear.armor !== null) {
@@ -100,18 +100,36 @@ function monster(enemy, x, y, scale) {
   const featured = enemy.trial !== undefined ? 3 : enemy.rank === 'major' && enemy.chapter === 9 ? 0 :
     isFinalBoss(enemy) ? (enemy.chapter === last || phase === 3 ? 2 : 1) : null;
   const sprite = enemy.boss ? (enemy.hiddenRegion !== undefined && variant % 2 ? 5 : 4) : variant;
-  const image = featured === null ? picture('enemy-' + sprite) : picture('boss-' + featured);
   const bob = reducedMotion.matches ? 0 : Math.sin(clock * 6 + (enemy.slot ?? 0)) * (variant > 1 ? 2 : 1);
-  const size = (enemy.boss ? 64 : 48) * scale;
-  groundShadow(x, y + 1, size * .37, size * .08);
+  const body = battle?.enemy === enemy ? battle.body : combatBody(enemy);
+  const size = 56 * scale;
+  const large = Math.min(125, size * .35 * body.width);
+  groundShadow(x, y + 1, large, Math.min(27, size * .075));
+  const engaged = battle?.enemy === enemy;
+  if (!enemy.boss && body.motion === 'duel') {
+    const pose = engaged && battle.enemyHit > clock ? 5 : engaged && battle.strike ? 3 :
+      1 + Math.floor(clock * 9) % 2;
+    drawActor('守衛',x,y,scale,engaged ? battle.enemyFacing.x : -1,pose);
+    return;
+  }
+  const image = enemy.trial !== undefined ? picture('emperor-' + enemy.trial) :
+    featured === null ? picture('enemy-' + sprite) : picture('boss-' + featured);
   if (!image) return;
   ctx.save();
-  ctx.translate(x, y + bob);
-  if (battle && battle.heroX > battle.enemyX && !enemy.boss && sprite === 0) ctx.scale(-1, 1);
+  const attack = engaged && battle.strike;
+  const facing = engaged ? battle.enemyFacing.x : enemy.x < player.x ? 1 : -1;
+  const flinch = engaged && battle.enemyHit > clock ? -Math.sign(facing) * 5 : 0;
+  const lift = body.motion === 'float' ? -5 : 0;
+  ctx.translate(x + flinch, y + bob + lift);
+  if (attack && body.motion === 'stomp') ctx.scale(1.06, .94);
+  if (attack && ['duel','charge'].includes(body.motion)) {
+    ctx.rotate(-Math.sign(attack.direction.x) * (body.motion === 'charge' ? .15 : .07));
+  }
+  if (facing > .1 && body.motion !== 'float') ctx.scale(-1, 1);
   if (clock < enemy.flash && artQuality === 'high') ctx.filter = 'brightness(1.6)';
   else if (enemy.boss && featured === null && artQuality !== 'low') ctx.filter = 'hue-rotate(' + (enemy.chapter * 17 % 140) + 'deg)';
   ctx.imageSmoothingEnabled = artQuality !== 'low';
-  ctx.drawImage(image, -size / 2, -size * .95, size, size);
+  ctx.drawImage(image, -size * body.width / 2, -size * .95, size * body.width, size);
   ctx.restore();
 }
 
@@ -138,7 +156,7 @@ function drawHome() {
 function drawBuilding(site, camera) {
   const town = towns[site.chapter];
   const [name, , , , color, mark] = townTypes[site.kind];
-  const x = site.x - camera, door = site.row + 96;
+  const x = site.x - camera, door = fieldY(site.x,site.row);
   const y = door - 3;
   if (site.kind === 'secret') {
     rect(x - 17, y - 6, 34, 14, '#333044');
@@ -216,10 +234,55 @@ function drawTown(chapter, camera) {
     }
   }
   const town = towns[chapter];
-  const resident = townResident(town);
-  if (resident.x >= camera && resident.x <= camera + 640) {
-    drawCompanion('タク', resident.x - camera, resident.y + 96, .66, Math.sign(Math.cos(townSeconds * .8)), Math.sin(townSeconds * 12));
-    label(town.resident, resident.x - camera, resident.y + 70, '#ffe0a9', 9);
+  for (let index = 0; index < 3; index++) {
+    const resident = commuter(town,index);
+    if (resident.x < camera || resident.x > camera + 640) continue;
+    const x = resident.x - camera, y = fieldY(resident.x,resident.y);
+    drawCompanion(['タク','薬師','守衛'][index],x,y,.68,resident.face,1);
+    if (index === 0) label(town.resident,x,y - 36,'#ffe0a9',9);
+    if (index === 1 && townHour() >= 10 && townHour() < 18) {
+      rect(x + 7,y - 12,2,14,'#b68c66');
+      if (resident.activity === '漁の支度') diamond(x + 12,y + 1,4,3,'#a6d3cf');
+    }
+  }
+  for (const fixture of districtFixtures(chapter)) {
+    const x = fixture.x - camera, y = fieldY(fixture.x,fixture.y);
+    if (x < -25 || x > 670) continue;
+    if (fixture.kind === 'bench') {
+      groundShadow(x,y + 1,15,3);
+      rect(x - 13,y - 11,26,4,'#a57a5c');
+      rect(x - 13,y - 6,26,4,'#c49b75');
+      rect(x - 9,y - 3,2,7,'#413844'); rect(x + 7,y - 3,2,7,'#413844');
+    } else {
+      groundShadow(x,y + 1,10,3);
+      rect(x - 8,y - 29,17,29,'#477b84');
+      rect(x - 6,y - 25,13,15,'#cbb29d');
+      for (let i=0;i<3;i++) rect(x - 4 + 4*i,y - 23,2,7,'#8e697c');
+      rect(x - 3,y - 7,7,2,'#283445');
+      if (townNight()) lightAt(ctx,x,y - 20,29,'#e6d59166');
+    }
+  }
+  const animalX = town.chapter * span + 71 + ((clock * 14 + 51) % 174);
+  if (animalX >= camera && animalX <= camera + 640) {
+    const lane = 125 + Math.sin(clock * .8) * 8;
+    drawCat(animalX - camera,fieldY(animalX,lane),.55);
+  }
+  const dogX = town.chapter * span + 52 + ((clock * 10 + 32) % 120);
+  if (dogX >= camera && dogX <= camera + 640) {
+    const dog = picture('enemy-0');
+    if (dog) ctx.drawImage(dog,dogX-camera-15,fieldY(dogX,73)-25,30,30);
+  }
+  if (artQuality !== 'low' && !reducedMotion.matches) {
+    const birdX = (clock * 22 + chapter * 131) % 700 - 30;
+    ctx.strokeStyle = '#d6dbd7bd';
+    ctx.lineWidth = 1.5;
+    for (let i=0;i<3;i++) {
+      const lift = 3 + Math.sin(clock * 12 + i) * 2;
+      ctx.beginPath(); ctx.moveTo(birdX + i * 17,63 + i * 4);
+      ctx.quadraticCurveTo(birdX + i * 17 + 3,63 + i * 4 - lift,birdX + i * 17 + 6,63 + i * 4);
+      ctx.quadraticCurveTo(birdX + i * 17 + 9,63 + i * 4 - lift,birdX + i * 17 + 12,63 + i * 4);
+      ctx.stroke();
+    }
   }
 }
 
@@ -348,74 +411,116 @@ function drawField(chapter, camera) {
       rect(x, 124 + i * 17 % 38, 10 + i % 5 * 4, 1, '#b1d8d879');
     }
   }
-  const pathPaint = ctx.createLinearGradient(0, 167, 0, 229);
-  pathPaint.addColorStop(0, '#88736100');
-  pathPaint.addColorStop(.30, '#9a866bc2');
-  pathPaint.addColorStop(.72, '#a49276c2');
-  pathPaint.addColorStop(1, '#88736100');
-  ctx.fillStyle = pathPaint;
-  ctx.fillRect(0, 167, 640, 62);
-  for (let i = Math.floor(camera / 48); i < (camera + 660) / 48; i++) {
-    const x = i * 48 - camera;
-    rect(x, 184 + i % 4 * 8, 12, 2, '#98866e');
-    for (const y of [105 + i % 3 * 5, 280 + i % 2 * 11]) {
-      const wind = reducedMotion.matches ? 0 : Math.sin(clock * 1.4 + i * .8) * 3;
-      if (y > 200 || !painted) {
-        groundShadow(x + 15, y + 25, 11, 3);
-        polygon([[x + 14,y + 27],[x + 16 + wind,y + 5],[x + 20 + wind,y + 13],[x + 18,y + 27]], '#51463e');
-        for (const offset of [-7,0,7]) {
-          const top = y + 8 + Math.abs(offset) * .8;
-          polygon([[x + 16 + offset + wind,top - 10],[x + 25 + offset,top + 8],
-            [x + 15 + offset,top + 14],[x + 7 + offset,top + 6]], leaf);
-        }
+  const layout = fieldLayouts[chapter], season = seasonIndex();
+  const ridge = [];
+  for (let x = -15; x <= 670; x += 19) {
+    const world = camera + x;
+    ridge.push([x,fieldY(clamp(world,0,limit),104)]);
+  }
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ridge.forEach(([x,y],i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
+  for (const [width, alpha] of [[61,.15],[50,.27],[39,.41],[22,.14]]) {
+    ctx.globalAlpha = alpha; ctx.strokeStyle = layout.roadTone; ctx.lineWidth = width; ctx.stroke();
+  }
+  ctx.restore();
+  if (layout.water) {
+    const start = chapter * span;
+    ctx.save();
+    ctx.beginPath();
+    for (let world = start + 368; world <= start + 824; world += 12) {
+      const x = world - camera, y = fieldY(world,riverY(world,chapter));
+      if (world === start + 368) ctx.moveTo(x,y);
+      else ctx.lineTo(x,y);
+    }
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = '#5c8a9f90'; ctx.lineWidth = 23; ctx.stroke();
+    ctx.strokeStyle = '#c8e4dc6e'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+    const x = layout.bridge - camera;
+    if (x > -40 && x < 680) {
+      const bridge = picture('landmark-3');
+      if (bridge) ctx.drawImage(bridge,x - 30,fieldY(layout.bridge,riverY(layout.bridge,chapter)) - 34,59,52);
+    }
+  }
+  if (layout.terrace) {
+    const x = layout.bridge - camera;
+    const y = fieldY(layout.bridge,68);
+    if (x > -50 && x < 690) for (let i=0;i<6;i++) rect(x - 18 + i * 4,y + i * 5,34,4,'#9a97958a');
+  }
+  const tones = season === 0 ? ['#759c77','#c4969e','#d8a9ac'] :
+    season === 1 ? ['#51866e','#68956e','#84a77a'] :
+    season === 2 ? ['#ad684f','#bd8c59','#917052'] : ['#7d9694','#abc3c7','#c9d9d6'];
+  for (const plant of layout.foliage) {
+    const x = plant.x - camera;
+    if (x < -38 || x > 678) continue;
+    const y = fieldY(plant.x, plant.y);
+    const size = plant.size;
+    const wind = reducedMotion.matches ? 0 : Math.sin(clock * 1.3 + plant.x * .05) * 3;
+    groundShadow(x,y + 1,size * .49,size * .12);
+    if (plant.type === 0) {
+      polygon([[x-size*.48,y],[x-size*.33,y-size*.31],[x+size*.25,y-size*.40],[x+size*.47,y]],'#777881');
+    } else if (plant.type === 1) {
+      for (const offset of [-4,0,4]) {
+        ctx.strokeStyle = tones[0]; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x + offset,y); ctx.quadraticCurveTo(x+offset + 2,y-9,x+offset+wind,y-13); ctx.stroke();
+        diamond(x+offset+wind,y-13,2,2,tones[2]);
+      }
+    } else {
+      polygon([[x-2,y],[x+plant.turn+wind,y-size],[x+4,y-size*.32],[x+2,y]],'#55463d');
+      for (const [i,tint] of tones.entries()) {
+        const px = x + (i - 1) * size * .19 + wind + plant.turn;
+        ctx.fillStyle = tint; ctx.beginPath();
+        ctx.ellipse(px,y-size*.68-i*2,size*(.39-i*.035),size*.43,plant.turn*.11,0,6.283);
+        ctx.fill();
       }
     }
-    diamond(x + 15, 145 + i % 3 * 38, 2, 2, '#e4cf9c');
   }
   ageLight(ctx);
   drawTown(chapter, camera);
   const view = scenicSpot(chapter);
   const sx = view.x - camera;
+  const viewY = fieldY(view.x,view.y) - 96;
   if (sx > -30 && sx < 670) {
     const region = prefectures[chapter];
     const icon = picture('landmark-' + landmarkFor(region));
     const width = 72 + chapter % 4 * 6;
     if (icon) {
-      groundShadow(sx, view.y + 93, width * .42, 9);
-      ctx.drawImage(icon, sx - width / 2, view.y + 94 - width, width, width);
-    } else rect(sx - 18, view.y + 85, 36, 20, '#77708a');
+      groundShadow(sx, viewY + 93, width * .42, 9);
+      ctx.drawImage(icon, sx - width / 2, viewY + 94 - width, width, width);
+    } else rect(sx - 18, viewY + 85, 36, 20, '#77708a');
     if (!icon) {
-      rect(sx - 14, view.y + 82, 28, 7, region.color);
-      rect(sx - 12, view.y + 75, 2, 14, '#f3d9b7');
-      rect(sx + 10, view.y + 75, 2, 14, '#f3d9b7');
+      rect(sx - 14, viewY + 82, 28, 7, region.color);
+      rect(sx - 12, viewY + 75, 2, 14, '#f3d9b7');
+      rect(sx + 10, viewY + 75, 2, 14, '#f3d9b7');
     }
-    label(region.sight, sx, view.y + 106, '#ffe8b6', 10);
-    if (townNight()) lightAt(ctx, sx, view.y + 78, 35, '#f6c78069');
+    label(region.sight, sx, viewY + 106, '#ffe8b6', 10);
+    if (townNight()) lightAt(ctx, sx, viewY + 78, 35, '#f6c78069');
   }
   for (const gem of gems) {
-    if (gem.on && Math.abs(gem.x - player.x) < 640) diamond(gem.x - camera, gem.row + 89, 6, 9, '#ffe5a0');
+    if (gem.on && Math.abs(gem.x - player.x) < 640) diamond(gem.x - camera, fieldY(gem.x,gem.row) - 7, 6, 9, '#ffe5a0');
   }
   for (const npc of npcs) {
     if (npc.name === player.party[0] || Math.abs(npc.x - player.x) > 640) continue;
-    drawCompanion(npc.name, npc.x - camera, 200, .8, 1);
-    label(npc.name, npc.x - camera, 166);
+    drawCompanion(npc.name, npc.x - camera, fieldY(npc.x,104), .8, 1);
+    label(npc.name, npc.x - camera, fieldY(npc.x,104) - 34);
   }
   for (const shrine of shrines) {
     if (Math.abs(shrine.x - player.x) > 640) continue;
-    const x = shrine.x - camera, y = shrine.row + 92;
+    const x = shrine.x - camera, y = fieldY(shrine.x,shrine.row) - 4;
     rect(x - 12, y - 20, 24, 25, '#4b375c');
     diamond(x, y - 10, 7, 10, shrine.solved ? '#efcd84' : '#9d7897');
   }
   for (const enemy of activeEnemies(chapter)) {
     if (!enemy.hp || !unlocked(enemy)) continue;
-    const x = enemy.x - camera, y = enemy.y + 96;
-    monster(enemy, x, y, enemy.boss ? 1.05 : .65);
+    const x = enemy.x - camera, y = fieldY(enemy.x,enemy.y);
+    monster(enemy, x, y, Math.min(1.38, combatBody(enemy).size * .73));
     rect(x - 12, y - 31, 24, 3, '#35203a');
     rect(x - 12, y - 31, 24 * enemy.hp / enemy.max, 3, '#ff8d8d');
   }
   for (const pot of pots) {
     if (Math.abs(pot.x - player.x) > 640) continue;
-    const x = pot.x - camera, y = pot.y + 96;
+    const x = pot.x - camera, y = fieldY(pot.x,pot.y);
     if (pot.broken) {
       rect(x - 9, y - 1, 5, 3, '#b57758');
       rect(x + 3, y - 3, 5, 4, '#ce9874');
@@ -425,12 +530,12 @@ function drawField(chapter, camera) {
       rect(x - 6, y - 7, 12, 2, '#dfa18a');
     }
   }
-  const x = player.x - camera, y = player.y + 96 - jumpHeight;
+  const x = player.x - camera, y = fieldY(player.x,player.y) - jumpHeight;
   const member = currentCompanion();
-  if (member) drawCompanion(member.name, companionTrail.x - camera, companionTrail.y + 96, .9,
+  if (member) drawCompanion(member.name, companionTrail.x - camera, fieldY(companionTrail.x,companionTrail.y), .9,
     Math.sign(player.x - companionTrail.x), Math.sin(clock * 15) * 1.8);
-  if (joined) drawCat(cat.x - camera, cat.y + 96, .8);
-  if (jumpHeight) rect(x - 7, player.y + 98, 14, 3, '#292735');
+  if (joined) drawCat(cat.x - camera, fieldY(cat.x,cat.y), .8);
+  if (jumpHeight) rect(x - 7, fieldY(player.x,player.y) + 2, 14, 3, '#292735');
   if (clock < swingUntil && swingKind === 'afterimage' && !reducedMotion.matches) {
     ctx.globalAlpha = .3;
     hero(x - player.facing.x * 12, y, .9, player.facing.x);
@@ -460,132 +565,168 @@ function slashArc(x, y, face, distance) {
   ctx.restore();
 }
 
-function drawBattle() {
-  const {enemy, heroX, enemyX, strike, damageFlash} = battle;
-  const boss = enemy.boss;
-  const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
+function drawDanger(strike, impact = false) {
   ctx.save();
-  combatCamera(ctx);
-  rect(0, 0, 640, 360, phase === 3 ? '#4c203a' : phase === 2 ? '#362455' : boss ? '#301f3e' : '#252f45');
-  landscapeArt(ctx, enemy.chapter, 0, boss);
-  const stageLight = ctx.createLinearGradient(0, 164, 0, 350);
-  stageLight.addColorStop(0, '#35263a00');
-  stageLight.addColorStop(.35, '#342a45b8');
-  stageLight.addColorStop(1, '#1e1a33f0');
-  ctx.fillStyle = stageLight;
-  ctx.fillRect(0, 164, 640, 186);
-  rect(0, 245, 640, 1, '#fbd5a34a');
-  if (boss) lightAt(ctx, enemyX, 193, 85, phase === 3 ? '#ffc2644e' : '#be8dff45');
-  if (strike) {
-    const width = strike.wave ? 640 : strike.range;
-    const x = strike.wave ? 0 : enemyX + (strike.direction < 0 ? -width : 0);
-    rect(x, 237, width, 6, '#e78181');
-    label(strike.label, enemyX, 151, '#ffc0ab', 18);
+  ctx.fillStyle = impact ? '#ffbd6461' : '#dc595c4c';
+  ctx.strokeStyle = impact ? '#ffe3a7bc' : '#ff9691c8';
+  ctx.lineWidth = impact ? 3 : 2;
+  const {x,y,range,direction,width} = strike;
+  ctx.beginPath();
+  if (strike.wave) ctx.ellipse(x, battleDepth(y), range, range * .68, 0, 0, Math.PI * 2);
+  else {
+    const side = {x:-direction.y,y:direction.x};
+    ctx.moveTo(x - side.x * width * .7,battleDepth(y - side.y * width * .7));
+    ctx.lineTo(x + side.x * width * .7,battleDepth(y + side.y * width * .7));
+    ctx.lineTo(x + direction.x * range + side.x * width,battleDepth(y + direction.y * range + side.y * width));
+    ctx.lineTo(x + direction.x * range - side.x * width,battleDepth(y + direction.y * range - side.y * width));
+    ctx.closePath();
   }
-  if (boss && battle.age < 1.25) {
-    const fade = Math.min(1, battle.age * 6, (1.25 - battle.age) * 3);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function dustAt(event) {
+  if (!event || artQuality === 'low' || event.until <= clock) return;
+  const t = 1 - (event.until - clock) / .45;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - t) * .55;
+  const quantity = artQuality === 'high' ? 14 : 7;
+  for (let i = 0; i < quantity; i++) {
+    const angle = i * 6.283 / quantity;
+    const drift = 12 + t * (event.strong ? 53 : 25);
+    ctx.fillStyle = i % 2 ? '#b3967b' : '#fed8a0';
+    ctx.beginPath();
+    ctx.ellipse(event.x + Math.cos(angle) * drift,battleDepth(event.y) + Math.sin(angle) * drift * .68 - t * 14,
+      3 + t * 5,2 + t * 3,0,0,6.283);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBattle() {
+  const {enemy, body, strike, impact, arena} = battle;
+  const heroPoint = actorPoint('hero'), enemyPoint = actorPoint('enemy');
+  const heroY = battleDepth(heroPoint.y) - jumpHeight;
+  const enemyY = battleDepth(enemyPoint.y);
+  const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
+  drawArenaBackdrop(arena, enemy.chapter);
+  if (enemy.boss && battle.age < 1.25) {
     ctx.save();
-    ctx.globalAlpha *= fade;
-    rect(118, 120, 404, 29, '#141426d4');
-    label(enemy.name, 320, 140, '#ffeac2', 17);
+    ctx.globalAlpha = Math.min(1, battle.age * 6, (1.25 - battle.age) * 3);
+    rect(105, 107, 430, 30, '#111526d9');
+    label(enemy.name, 320, 128, '#ffeac2', 17);
     ctx.restore();
   }
-  const offset = clock < damageFlash && !reducedMotion.matches ? Math.sign(heroX - enemyX) * 10 : 0;
-  monster(enemy, enemyX + offset, 244, boss ? 1.55 + phase * .25 : 1.4);
-  const heroY = 244 - jumpHeight;
-  if (battle.superAwake) {
-    ctx.strokeStyle = '#ffd769';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.ellipse(heroX, heroY - 20, 24, 33, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  if (jumpHeight) rect(heroX - 10, 245, 20, 3, '#242236');
-  if (clock < swingUntil && swingKind === 'afterimage' && !reducedMotion.matches) {
-    ctx.globalAlpha = .3;
-    hero(heroX - player.facing.x * 15, heroY, 1.4, player.facing.x);
-    ctx.globalAlpha = 1;
-  }
-  hero(heroX, heroY, 1.4, player.facing.x);
+  ctx.save();
+  const shake = !reducedMotion.matches && artQuality !== 'low' && impact?.strong && impact.until > clock ?
+    Math.sin((impact.until - clock) * 56) * Math.min(6, (impact.until - clock) * 19) : 0;
+  ctx.translate(320 + shake, 245);
+  const zoom = arenaZoom();
+  ctx.scale(zoom, zoom);
+  ctx.translate(-320, -245);
+  combatCamera(ctx);
+  if (strike) drawDanger(strike);
+  if (impact?.until > clock && impact.until - clock > .22) drawDanger(impact, true);
+  dustAt(impact);
+  dustAt(battle.stepDust);
+  if (enemy.boss) lightAt(ctx, enemyPoint.x, enemyY - 32, 88, phase === 3 ? '#ffc2644e' : '#be8dff45');
+
+  const actors = [
+    {depth:heroPoint.y, paint:() => {
+      const scale = depthScale(heroPoint.y);
+      if (jumpHeight) groundShadow(heroPoint.x, heroY + jumpHeight, 11, 3);
+      hero(heroPoint.x, heroY, scale, player.facing.x);
+      if (battle.superAwake) lightAt(ctx, heroPoint.x, heroY - 20, 55, '#ffd76985');
+      if (pressed('guard')) diamond(heroPoint.x + player.facing.x * 12,heroY - 20,9,17,'#95d7ddc7');
+      if (clock < swingUntil) {
+        const reach = equipped('weapon').reach ?? 55;
+        const end = {x:heroPoint.x + player.facing.x * reach, y:heroY - 26 + player.facing.y * reach * .68};
+        slashArc(heroPoint.x, heroY - 25, player.facing.x, reach * .76);
+        polygon([[heroPoint.x,heroY - 26],[end.x,end.y - 9],[end.x,end.y + 5]], swingKind === 'air' ? '#9de0ef' : '#ffe5ad');
+      }
+    }},
+    {depth:enemyPoint.y, paint:() => monster(enemy, enemyPoint.x, enemyY, body.size * depthScale(enemyPoint.y))}
+  ];
   const member = currentCompanion();
   if (member) {
-    const x = battle.allyX;
-    const visibleAction = battle.allyAction?.until > clock ? battle.allyAction : null;
-    const activity = battle.allyDodge > clock ? 8 : 0;
-    ctx.globalAlpha = member.hp > 0 ? 1 : .43;
-    drawCompanion(member.name, x - activity, 247 + (member.hp ? 0 : 8), 1.2,
-      Math.sign(enemyX - x), member.hp ? Math.sin(clock * 11) * 1.3 : 0, battle.allyHit > clock);
-    ctx.globalAlpha = 1;
-    if (battle.allyGuard > clock) diamond(x + 13, 224, 9, 15, '#98d5e1');
-    if (visibleAction?.kind === 'magic') {
-      ctx.strokeStyle = '#c3a7ff';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(x, 223);
-      ctx.lineTo(enemyX, 205);
-      ctx.stroke();
-    } else if (visibleAction?.kind === 'heal') {
-      diamond(heroX, 211, 11, 20, '#a6e0b1');
-    } else if (visibleAction) {
-      const reach = visibleAction.direction * 30;
-      polygon([[x,224],[x + reach,205],[x + reach * .65,232]], '#ffe0a0');
-    }
-  }
-  if (joined) drawCat(battle.catX, 247, 1.15 + cat.form * .13, cat.form);
-  const effect = battle.catEffect;
-  if (effect && effect.until > clock && !reducedMotion.matches) {
-    const color = catForm().color;
-    if (effect.type === 'strike') {
-      const x = enemyX, y = 210;
-      const reach = 12 + cat.form * 5;
-      polygon([[x - reach,y + 12],[x + reach,y - 24],[x + reach * .5,y - 4],[x - reach * .8,y + 18]], color);
-      if (cat.form === 1) {
-        polygon([[x - 25,y + 2],[x + 20,y - 20],[x + 7,y - 7],[x - 25,y + 10]], color);
-      } else if (cat.form === 2 || cat.form === 3) {
-        for (const shift of [-14, 0, 14]) diamond(x + shift, y, 5, cat.form === 2 ? 10 : 20, color);
-      } else if (cat.form >= 4) {
-        polygon([[x + 12,y - 74],[x - 9,y - 36],[x + 6,y - 39],[x - 5,y + 7],[x + 13,y - 49],[x - 1,y - 46]], color);
+    const ally = actorPoint('ally');
+    actors.push({depth:ally.y, paint:() => {
+      const y = battleDepth(ally.y);
+      const direction = Math.sign(enemyPoint.x - ally.x);
+      ctx.save();
+      if (!member.hp) ctx.globalAlpha = .52;
+      drawCompanion(member.name,ally.x,y,depthScale(ally.y),direction,1,battle.allyHit > clock);
+      ctx.restore();
+      if (battle.allyGuard > clock) diamond(ally.x + direction * 9,y - 20,8,13,'#98d5e1');
+      const action = battle.allyAction;
+      if (action?.until > clock) {
+        if (action.kind === 'magic') {
+          ctx.strokeStyle = '#dbc2ff';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(ally.x,y - 25); ctx.lineTo(enemyPoint.x,enemyY - 36); ctx.stroke();
+        } else if (action.kind === 'heal') diamond(heroPoint.x,heroY - 25,11,20,'#a6e0b1');
+        else slashArc(ally.x,y - 18,direction,34);
       }
-      label(cat.form === 5 ? '創世光' : catForm().spell, x, y - 30, color);
-    } else {
-      const radius = (effect.type === 'creation' ? 170 : 85) * (1 - (effect.until - clock) / 1.2);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(battle.catX, 226, radius, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+    }});
   }
-  if (clock < swingUntil) {
-    const dx = player.facing.x;
-    const end = (equipped('weapon').reach ?? 55) * dx;
-    const air = swingKind === 'air';
-    slashArc(heroX, heroY - 23, dx, Math.abs(end));
-    polygon([[heroX, heroY - 25], [heroX + end, heroY - (air ? 4 : 48)],
-      [heroX + end * .86, heroY - (air ? 17 : 26)], [heroX + end * .45, heroY - 11]], air ? '#95dfff' : '#fff2b9');
+  if (joined) {
+    const p = actorPoint('cat');
+    actors.push({depth:p.y, paint:() => drawCat(p.x,battleDepth(p.y),depthScale(p.y) * (1 + cat.form * .12),cat.form)});
+  }
+  actors.sort((a, b) => a.depth - b.depth).forEach(actor => actor.paint());
+
+  const effect = battle.catEffect;
+  if (effect?.until > clock && !reducedMotion.matches) {
+    const x = effect.type === 'strike' ? enemyPoint.x : battle.catX;
+    const y = effect.type === 'strike' ? enemyY - 32 : battleDepth(battle.catY) - 16;
+    const color = catForm().color;
+    const radius = effect.type === 'creation' ? 84 : 25 + cat.form * 4;
+    lightAt(ctx,x,y,radius,color + '70');
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(x,y,radius,radius * .51,0,0,6.283); ctx.stroke();
+    if (effect.type === 'strike') label(cat.form === 5 ? '創世光' : catForm().spell,x,y - 24,color);
   }
   if (clock < enemy.flash && artQuality !== 'low') {
-    lightAt(ctx, enemyX, 198, 43, '#ffc88069');
     for (let i = 0; i < 8; i++) {
       const angle = i * Math.PI / 4;
-      const spread = (enemy.flash - clock) * 95;
-      diamond(enemyX + Math.cos(angle) * spread, 199 + Math.sin(angle) * spread, 2, 3, '#ffdc9a');
+      const spread = (enemy.flash - clock) * 115;
+      diamond(enemyPoint.x + Math.cos(angle) * spread, enemyY - 29 + Math.sin(angle) * spread, 2, 3, '#ffdc9a');
     }
   }
-  drawCinematicEffect(ctx, battle.catX + 10, 211, cat.form === 5);
+  drawCinematicEffect(ctx, battle.catX + 10, battleDepth(battle.catY) - 20, cat.form === 5);
+  if (glow && !glow.field && clock < glow.until) {
+    const endX = glow.x + glow.dx * starterRing.reach;
+    const endY = glow.y + glow.dy * starterRing.reach;
+    lightAt(ctx,glow.x,glow.y,42,'#a6d6ff83');
+    ctx.strokeStyle = '#9ee8ff'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(glow.x,glow.y); ctx.lineTo(endX,endY); ctx.stroke();
+  }
+  for (const number of numbers) {
+    if (!number.field) label(number.text,number.x,number.y - (1 - (number.expires - clock) / .7) * 24,number.color,16);
+  }
   ctx.restore();
 }
 
 function render() {
+  if (innScene) return drawInnStay();
   if (interior && mode === 'field') return drawInterior();
   const chapter = chapterOf(player.x);
-  const camera = clamp(player.x - 245, -85, limit - 515);
+  const camera = fieldCamera;
   if (mode === 'title' || mode === 'home') drawHome();
   else if (battle) drawBattle();
   else drawField(chapter, camera);
+  if (!battle && mode === 'field' && defeatedFoe?.until > clock && defeatedFoe.chapter === chapter) {
+    ctx.save();
+    ctx.globalAlpha = (defeatedFoe.until - clock) / .67;
+    const fadeY = fieldY(player.x,player.y) - (1 - ctx.globalAlpha) * 23;
+    monster(defeatedFoe.enemy, player.x - camera + 45, fadeY, Math.min(1.4, defeatedFoe.scale));
+    ctx.restore();
+  }
   if (mode === 'field' && sealEffect && clock < sealEffect.until && !reducedMotion.matches) {
     const progress = 1 - (sealEffect.until - clock) / .9;
-    const x = sealEffect.x - camera, y = sealEffect.y + 83;
+    const x = sealEffect.x - camera, y = fieldY(sealEffect.x,sealEffect.y) - 13;
     ctx.globalAlpha = 1 - progress;
     ctx.strokeStyle = '#ffeaa3';
     ctx.lineWidth = 3;
@@ -598,9 +739,9 @@ function render() {
     }
     ctx.globalAlpha = 1;
   }
-  if (clock < burstUntil && !reducedMotion.matches) {
+  if (!battle && clock < burstUntil && !reducedMotion.matches) {
     const x = battle ? battle.heroX : player.x - camera;
-    const y = battle ? 215 : player.y + 86;
+    const y = fieldY(player.x,player.y) - 10;
     ctx.globalAlpha = Math.min(.8, (burstUntil - clock) * 2);
     ctx.strokeStyle = '#ffe4a4';
     ctx.lineWidth = 4;
@@ -609,7 +750,7 @@ function render() {
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  if (glow && clock < glow.until && glow.field === !battle) {
+  if (!battle && glow && clock < glow.until && glow.field) {
     const x = glow.x - (glow.field ? camera : 0);
     ctx.strokeStyle = '#9ee8ff';
     ctx.lineWidth = 4;
@@ -623,12 +764,13 @@ function render() {
     ctx.stroke();
   }
   for (const number of numbers) {
-    if (number.field !== !battle) continue;
-    const y = number.y + (number.field ? 96 : 0) - (1 - (number.expires - clock) / .7) * 24;
+    if (battle || !number.field) continue;
+    const y = fieldY(number.x,number.y) - (1 - (number.expires - clock) / .7) * 24;
     label(number.text, number.x - (number.field ? camera : 0), y, number.color, 19);
   }
 }
 
+let fieldCamera = -85;
 let previousFrame = null;
 let lastUI = 0;
 let lastDraw = -Infinity;
@@ -637,7 +779,13 @@ function frame(timestamp) {
   previousFrame = timestamp;
   const moment = cinemaMoment();
   const timeScale = moment?.kind === 'impact' && moment.progress < .38 ? .52 : 1;
-  if (!document.hidden) update(elapsed * timeScale);
+  if (!document.hidden) {
+    update(elapsed * timeScale);
+    advanceInn(elapsed);
+    const target = clamp(player.x - 245,-85,limit - 515);
+    fieldCamera = Math.abs(fieldCamera - target) > 350 || reducedMotion.matches ?
+      target : fieldCamera + (target - fieldCamera) * (1 - Math.exp(-elapsed * 9));
+  }
   const frameInterval = artQuality === 'low' ? 47 : artQuality === 'medium' ? 24 : 15;
   if (!document.hidden && timestamp - lastDraw >= frameInterval) {
     render();
@@ -650,3 +798,116 @@ function frame(timestamp) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+function seatedAtInn(name, x, y, facing) {
+  const actor = picture('actors');
+  if (!actor) return;
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(facing,1);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(actor,0,actorRow(name)*64,64,44,-30,-42,60,42);
+  polygon([[-9,-2],[1,-3],[9,3],[7,14],[2,14],[3,6],[-7,6]],'#574358');
+  polygon([[2,12],[8,12],[12,16],[2,16]],'#4a3641');
+  ctx.restore();
+}
+
+function drawInnStay() {
+  const scene = innScene;
+  const t = scene.time;
+  const reception = scene.stage <= 1;
+  const sleep = scene.stage === 4;
+  const dawn = scene.stage >= 5;
+  const night = sleep || scene.stage === 3;
+  const image = picture('inn-' + (reception ? 2 : scene.profile.art));
+  rect(0,0,640,360,'#46323a');
+  if (image) coverArt(ctx,image,0,0,640,360);
+  const glow = ctx.createLinearGradient(0,140,0,345);
+  glow.addColorStop(0,'#56424900');
+  glow.addColorStop(1,'#34272add');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0,140,640,205);
+  const sun = dawn ? clamp((t - 14.3) / 3,0,1) : 0;
+  rect(431,55,95,86,'#241d2a');
+  rect(438,61,81,72,night ? '#26304c' : dawn ? '#bc977e' : '#827c93');
+  polygon([[438,124],[455,100],[477,114],[502,92],[518,109],[518,132],[438,132]],'#4c5263');
+  if (night) {
+    ctx.fillStyle='#ddd8b8';ctx.beginPath();ctx.arc(493,81,11,0,6.283);ctx.fill();
+  } else if (dawn) {
+    ctx.fillStyle='#ffdd9a';ctx.beginPath();ctx.arc(495,125-sun*38,13,0,6.283);ctx.fill();
+    lightAt(ctx,474,123,105,'#ffc17b83');
+  }
+  rect(476,61,4,72,'#75594f');
+  rect(438,96,81,3,'#75594f');
+  if (reception) {
+    groundShadow(234,224,68,9);
+    rect(174,174,117,53,'#70514a');
+    rect(170,170,125,10,'#b18c6a');
+    for (let i=0;i<5;i++) rect(178+i*23,183,1,40,'#4e3740');
+    drawCompanion('恵美ちゃん',229,172,.92,1);
+    if (scene.stage === 0) {
+      diamond(275,177 + Math.sin(t*8)*2,4,6,'#ffcf7c');
+      rect(277,175,6,1,'#e8ba81');
+    }
+  } else {
+    const heat = sleep ? 0 : 1;
+    rect(114,119,85,75,'#6b5755');
+    rect(124,135,65,55,'#2a2330');
+    if (heat) {
+      const fire = reducedMotion.matches ? 0 : Math.sin(t*14)*4;
+      polygon([[136,183],[140,166],[150,169],[155+fire,147],[165,172],[174,166],[182,183]],'#e88955');
+      polygon([[145,184],[151,171],[160+fire,164],[170,184]],'#f8c475');
+      lightAt(ctx,156,168,88,'#ffa05787');
+    }
+    for (const x of [310,460]) {
+      groundShadow(x,231,57,9);
+      rect(x-51,176,102,54,'#493441');
+      rect(x-48,178,96,42,'#8c665b');
+      rect(x-42,184,27,27,'#eee1bb');
+      rect(x-11,180,58,36,scene.profile.art === 1 ? '#648b84' : '#9c5b6e');
+      rect(x+40,184,4,30,'#c19883');
+      rect(x-47,220,91,3,'#6d4e52');
+    }
+    if (scene.stage >= 2 && scene.stage <= 5) {
+      rect(241,199,78,26,'#79594c');
+      rect(235,195,86,5,'#ac8163');
+      polygon([[245,199],[268,184],[272,186],[252,203]],'#ced6d3');
+      rect(277,198,21,9,'#984f68');
+    }
+  }
+  const ally = currentCompanion();
+  if (scene.stage <= 1) {
+    const travel = clamp((t - 1.6) / 1.9,0,1);
+    drawActor('一美',263 + travel*139,237 - travel*19,1.12,1,scene.stage ? 1 + Math.floor(t*9)%2 : 6);
+    if (ally) drawActor(ally.name,224 + travel*136,246 - travel*21,1.06,1,scene.stage ? 1 + Math.floor(t*9)%2 : 0);
+    if (joined) drawCat(208 + travel*130,248 - travel*18,.8);
+  } else {
+    const tired = scene.stage === 4 || scene.stage === 5;
+    const rising = scene.stage === 6;
+    const rise = clamp((t-17.3)/1.6,0,1);
+    const pose = tired ? 8 : rising ? 1 + Math.floor(t*7)%2 : scene.stage === 3 ? 6 : 0;
+    const y = tired ? 214 : rising ? 216 + rise*27 : 228;
+    if (scene.stage === 2 || scene.stage === 3) {
+      seatedAtInn('一美',335,210,1);
+      if (ally) seatedAtInn(ally.name,472,210,-1);
+    } else {
+      drawActor('一美',335,y,1.13,1,pose);
+      if (ally) drawActor(ally.name,472,y,1.02,-1,pose);
+    }
+    if (tired) {
+      rect(322,195,30,14,'#a76578');
+      if (ally) rect(459,195,30,14,'#a76578');
+    }
+    if (joined) {
+      const catTime = sleep ? 0 : Math.floor(t*5)%3;
+      const sheet = picture('soso');
+      if (sheet) ctx.drawImage(sheet,catTime*64,0,64,64,345, sleep ? 191 : 207,42, sleep ? 32 : 40);
+    }
+  }
+  if (night) {
+    ctx.fillStyle = sleep ? '#111733' : '#29243d';
+    ctx.globalAlpha = sleep ? .32 + clamp((t - 10) / 1.6,0,1) * .47 : .24;
+    ctx.fillRect(0,0,640,360);
+    ctx.globalAlpha = 1;
+  } else if (dawn) lightAt(ctx,451,103,220,'#f6c47971');
+}
