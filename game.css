@@ -68,7 +68,7 @@ button:disabled { opacity: .55; }
 @media (orientation: portrait) and (pointer: coarse) {
   #portrait { display: block; }
   canvas { object-fit: contain; }
-  #message { bottom: 113px; left: 8px; right: 8px; }
+  #message { bottom: 153px; left: 8px; right: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { #fade { transition: none; } }
 #awakening { color: #fff0ad; }

@@ -143,13 +143,31 @@ function drawField(chapter, camera) {
     rect(x - 12, y - 31, 24, 3, '#35203a');
     rect(x - 12, y - 31, 24 * enemy.hp / enemy.max, 3, '#ff8d8d');
   }
-  const x = player.x - camera, y = player.y + 96;
+  for (const pot of pots) {
+    if (Math.abs(pot.x - player.x) > 640) continue;
+    const x = pot.x - camera, y = pot.y + 96;
+    if (pot.broken) {
+      rect(x - 9, y - 1, 5, 3, '#b57758');
+      rect(x + 3, y - 3, 5, 4, '#ce9874');
+    } else {
+      rect(x - 7, y - 11, 14, 11, '#ad634f');
+      rect(x - 5, y - 14, 10, 4, '#e2ab81');
+      rect(x - 6, y - 7, 12, 2, '#dfa18a');
+    }
+  }
+  const x = player.x - camera, y = player.y + 96 - jumpHeight;
   if (joined) drawCat(cat.x - camera, cat.y + 96, .8);
+  if (jumpHeight) rect(x - 7, player.y + 98, 14, 3, '#292735');
+  if (clock < swingUntil && swingKind === 'afterimage' && !reducedMotion.matches) {
+    ctx.globalAlpha = .3;
+    hero(x - player.facing.x * 12, y, .9, player.facing.x);
+    ctx.globalAlpha = 1;
+  }
   hero(x, y, .9, player.facing.x);
   if (clock < swingUntil) {
     const {x: dx, y: dy} = player.facing;
     polygon([[x, y - 9], [x + dx * 31 - dy * 10, y - 9 + dy * 31 + dx * 10],
-      [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], '#fff1be');
+      [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], swingKind === 'air' ? '#95dfff' : '#fff1be');
   }
 }
 
@@ -173,7 +191,21 @@ function drawBattle() {
   }
   const offset = clock < damageFlash && !reducedMotion.matches ? Math.sign(heroX - enemyX) * 10 : 0;
   monster(enemy, enemyX + offset, 244, boss ? 1.55 + phase * .25 : 1.4);
-  hero(heroX, 244, 1.4, player.facing.x);
+  const heroY = 244 - jumpHeight;
+  if (battle.superAwake) {
+    ctx.strokeStyle = '#ffd769';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(heroX, heroY - 20, 24, 33, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (jumpHeight) rect(heroX - 10, 245, 20, 3, '#242236');
+  if (clock < swingUntil && swingKind === 'afterimage' && !reducedMotion.matches) {
+    ctx.globalAlpha = .3;
+    hero(heroX - player.facing.x * 15, heroY, 1.4, player.facing.x);
+    ctx.globalAlpha = 1;
+  }
+  hero(heroX, heroY, 1.4, player.facing.x);
   if (joined && cat.hp > 0) drawCat(battle.catX, 247, 1.15 + cat.form * .13, cat.form);
   const effect = battle.catEffect;
   if (effect && effect.until > clock && !reducedMotion.matches) {
@@ -201,7 +233,10 @@ function drawBattle() {
   }
   if (clock < swingUntil) {
     const dx = player.facing.x;
-    polygon([[heroX, 219], [heroX + dx * 46, 196], [heroX + dx * 42, 218], [heroX + dx * 21, 233]], '#fff2b9');
+    const end = (equipped('weapon').reach ?? 55) * dx;
+    const air = swingKind === 'air';
+    polygon([[heroX, heroY - 25], [heroX + end, heroY - (air ? 4 : 48)],
+      [heroX + end * .86, heroY - (air ? 17 : 26)], [heroX + end * .45, heroY - 11]], air ? '#95dfff' : '#fff2b9');
   }
 }
 
@@ -221,6 +256,15 @@ function render() {
     ctx.arc(x, y, 18 + (1 - (burstUntil - clock) / .55) * 110, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+  if (glow && clock < glow.until && glow.field === !battle) {
+    const x = glow.x - (glow.field ? camera : 0);
+    ctx.strokeStyle = '#9ee8ff';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x, glow.y);
+    ctx.lineTo(x + glow.dx * starterRing.reach, glow.y + glow.dy * starterRing.reach);
+    ctx.stroke();
   }
   for (const number of numbers) {
     if (number.field !== !battle) continue;

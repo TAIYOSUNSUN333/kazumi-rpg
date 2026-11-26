@@ -1,5 +1,6 @@
 // Original looping scores. Notes are MIDI pitches; each measure has eight steps.
 const scores = {
+  loss: [45, 'piano', [45, 41, 38, 40], [69, null, 64, null, 62, null, 57, null]],
   title: [102, 'strings', [50, 46, 53, 48], [62, 69, 74, 77, 76, 74, 69, 65]],
   home: [78, 'piano', [48, 45, 41, 43], [60, 64, 67, 72, 67, 64, 62, 64]],
   field: [118, 'flute', [50, 53, 55, 48], [62, 65, 69, 74, 72, 69, 65, 67]],
@@ -10,6 +11,7 @@ const scores = {
   boss: [128, 'strings', [38, 37, 41, 34], [62, 69, 65, 63, 62, 70, 67, 65]]
 };
 const effects = {
+  jump: [55, 62], air: [74, 62, 55], magic: [67, 74, 81], pot: [48, 58, 44],
   attack: [59, 48], hit: [43, 38], victory: [60, 64, 67, 72],
   awake1: [67, 74, 79], awake2: [57, 65, 72, 81], awake3: [72, 78, 85],
   awake4: [64, 76, 83, 88], awake5: [48, 60, 67, 72, 79, 84],

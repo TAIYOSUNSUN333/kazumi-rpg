@@ -65,11 +65,11 @@ const midBosses = ['桜鎌の番人', '夜啼き狼', '珊瑚の騎士', '黒晶
   '霧渡りの魔女', '砂灯の巨人', '銀鍵の猟犬', '星図の番兵', '裂空の使徒', '終鐘の守衛'];
 const awakening = [
   {turn: 0, name: '無属性', hp: 12000, mp: 600, atk: 1700, def: 500, speed: 168, color: '#f0d6b5', spell: '猫爪'},
-  {turn: 3, name: '風属性', hp: 20000, mp: 1000, atk: 2600, def: 1000, speed: 195, color: '#96efbe', spell: '風牙'},
-  {turn: 7, name: '炎属性', hp: 34000, mp: 2000, atk: 3800, def: 1900, speed: 214, color: '#ff9766', spell: '聖炎'},
-  {turn: 12, name: '氷属性', hp: 49000, mp: 3500, atk: 5200, def: 3300, speed: 233, color: '#a9e5ff', spell: '氷華'},
-  {turn: 18, name: '雷属性', hp: 71000, mp: 6000, atk: 7300, def: 6000, speed: 252, color: '#e4bbff', spell: '天雷'},
-  {turn: 30, name: '全属性・創世神', hp: 99999, mp: 9999, atk: 9999, def: 9999, speed: 280, color: '#fff2a4', spell: '天地創生'}
+  {turn: 3, name: '炎属性', hp: 20000, mp: 1000, atk: 2600, def: 1000, speed: 195, color: '#ff9766', spell: '聖炎'},
+  {turn: 5, name: '水・氷属性', hp: 34000, mp: 2000, atk: 3800, def: 1900, speed: 214, color: '#a9e5ff', spell: '氷華'},
+  {turn: 7, name: '雷属性', hp: 49000, mp: 3500, atk: 5200, def: 3300, speed: 233, color: '#f7d776', spell: '天雷'},
+  {turn: 10, name: '闇属性', hp: 71000, mp: 6000, atk: 7300, def: 6000, speed: 252, color: '#e4bbff', spell: '宵の爪'},
+  {turn: 15, name: '全属性・創世神', hp: 99999, mp: 9999, atk: 9999, def: 9999, speed: 280, color: '#fff2a4', spell: '天地創生'}
 ];
 const trials = [
   ['炎帝フェルナンド', '#fa785f', ['rush','slow','wave'], 0, {name:'焔帝の剣', bonus: 36}, '炎冠を継ぐ者'],
@@ -99,10 +99,10 @@ const enemies = chapters.flatMap((_, chapter) => [205, 260, 400, 525, 610, 720, 
 
 const equipment = {
   weapon: [
-    {name: '木柄の剣', bonus: 0, cost: 0},
-    {name: '旅人の剣', bonus: 5, cost: 25},
-    {name: '月影の剣', bonus: 12, cost: 80},
-    {name: '星銀の剣', bonus: 23, cost: 170}
+    {name: '木の棒', bonus: 3, cost: 0, weight: .2, interval: .25, reach: 32},
+    {name: '旅人の剣', bonus: 5, cost: 25, weight: 1.6, interval: .34, reach: 44},
+    {name: '月影の剣', bonus: 12, cost: 80, weight: 3.5, interval: .46, reach: 52},
+    {name: '星銀の剣', bonus: 23, cost: 170, weight: 5.6, interval: .55, reach: 59}
   ],
   armor: [
     {name: '継ぎはぎの服', bonus: 0, cost: 0},
@@ -113,3 +113,8 @@ const equipment = {
 };
 
 const chapterOf = x => Math.max(0, Math.min(last, Math.floor(x / span)));
+
+const starterRing = {name: '燐光の指輪', cost: 16, mp: 4, reach: 128};
+const pots = chapters.flatMap((_, chapter) => [100, 375, 660].map((offset, i) => ({
+  x: chapter * span + offset, y: i % 2 ? 145 : 70, broken: false
+})));
