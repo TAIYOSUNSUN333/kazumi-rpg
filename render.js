@@ -353,7 +353,7 @@ const roomDecor = {
   weapon:'剣架', armor:'鎧掛', items:'薬瓶', inn:'寝台', tavern:'樽',
   bank:'金庫', store:'商品棚', food:'食卓', church:'祭壇', library:'書架',
   bath:'湯船', smith:'金床', home:'戸棚', casino:'遊技台', ruin:'石像',
-  hall:'掲示板', secret:'石櫃', regional:'石柱'
+  hall:'掲示板', secret:'石櫃', regional:'石柱', magic:'魔術の書'
 };
 
 function drawRoomDetail(kind, x, y) {
@@ -391,6 +391,24 @@ function drawRoomDetail(kind, x, y) {
     rect(x-7,y-10,14,4,metal);
     rect(x-7,y-5,14,2,'#805b66');
   }
+}
+
+function drawRunningDust(camera = 0) {
+  if (!runDust || clock >= runDust.until || runDust.battle !== battle || runDust.interior !== interior ||
+      artQuality === 'low' || reducedMotion.matches) return;
+  const t = 1 - (runDust.until - clock) / .24;
+  const x = battle || interior ? runDust.x : runDust.x - camera;
+  const y = battle ? battleDepth(runDust.y) : interior ? runDust.y : fieldY(runDust.x,runDust.y);
+  ctx.save();
+  ctx.globalAlpha = .5 * (1 - t);
+  ctx.fillStyle = '#e0c59b';
+  for (let i=0;i<5;i++) {
+    const spread = t * (12 + i*3);
+    ctx.beginPath();
+    ctx.ellipse(x + spread * Math.cos(i*1.9),y - t*7 + spread * Math.sin(i*1.9)*.35,2+t*3,1+t*2,0,0,6.283);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawInterior() {
@@ -435,6 +453,12 @@ function drawInterior() {
     }
   }
   rect(292, 300, 56, 16, '#2d293f');
+  if (doorTransition?.exit) {
+    const open = Math.max(0, Math.min(1, (clock - doorTransition.start) / .24));
+    rect(294,300, 26 * (1-open),16,'#b3916a');
+    rect(346 - 26 * (1-open),300,26 * (1-open),16,'#b3916a');
+    lightAt(ctx,320,299,23+open*24,'#ffd99577');
+  }
   label('出口', 320, 298, '#ffe6b8', 12);
   if (site.kind === 'regional') {
     lightAt(ctx, 320, 100, 68, '#98a6ef70');
@@ -451,7 +475,8 @@ function drawInterior() {
   if (joined) drawCat(clamp(x - 22, 47, 593), y + 3, .8);
   const companion = currentCompanion();
   if (companion) drawCompanion(companion.name, clamp(x - 30, 47, 593), y + 8, .9, player.facing.x);
-  hero(x, y, 1.1, player.facing.x);
+  drawRunningDust();
+  hero(x, y-jumpHeight, 1.1, player.facing.x);
 }
 
 function drawField(chapter, camera) {
@@ -542,6 +567,17 @@ function drawField(chapter, camera) {
   ageLight(ctx);
   drawTown(chapter,camera);
   drawPlatforms(chapter,camera);
+  if (tourBook[chapter]?.photo) {
+    const portal = townSites.get('regional-' + chapter);
+    const x = portal.x-camera, y = fieldY(portal.x,portal.row);
+    if (x > -40 && x < 680) {
+      const icon = picture('landmark-5');
+      if (icon) ctx.drawImage(icon,x-35,y-47,70,61);
+      rect(x-11,y-18,22,21,'#292638');
+      lightAt(ctx,x,y-13,35,'#b895f983');
+      if (doorContact === portal || doorTransition?.site === portal) drawDoorHint(portal,camera);
+    }
+  }
   const view = scenicSpot(chapter);
   const sx = view.x - camera;
   const viewY = fieldY(view.x,view.y) - 96;
@@ -605,12 +641,30 @@ function drawField(chapter, camera) {
     hero(x - player.facing.x * 12, y, .9, player.facing.x);
     ctx.globalAlpha = 1;
   }
+  drawRunningDust(camera);
   hero(x, y, .9, player.facing.x);
+  if (jumpHeight < 28) {
+    const site = towns[chapter].sites.find(place => place.kind !== 'secret' &&
+      Math.abs(place.x - player.x) < 22 && player.y < place.row - 6 && player.y > place.row - 37);
+    const leaves = layout.foliage.find(plant => Math.abs(plant.x-player.x) < plant.size*.44 &&
+      plant.y > player.y && plant.y - player.y < plant.size*.8 && plant.type >= 2);
+    if (site || leaves) {
+      ctx.save();
+      ctx.globalAlpha = .37;
+      if (site) drawBuilding(site,camera);
+      if (leaves) {
+        ctx.fillStyle = tones[1];
+        ctx.beginPath(); ctx.ellipse(leaves.x-camera,fieldY(leaves.x,leaves.y)-leaves.size*.6,
+          leaves.size*.5,leaves.size*.39,.12,0,6.283); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
   skyEffects(ctx, chapter);
   if (clock < swingUntil) {
     const {x: dx, y: dy} = player.facing;
     polygon([[x, y - 9], [x + dx * 31 - dy * 10, y - 9 + dy * 31 + dx * 10],
-      [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], swingKind === 'charged' ? '#eaa4ff' : swingKind === 'air' ? '#95dfff' : '#fff1be');
+      [x + dx * 26 + dy * 11, y - 9 + dy * 26 - dx * 11]], swingKind === 'charged' ? '#eaa4ff' : swingKind === 'combo' ? '#d9f7ff' : swingKind === 'air' ? '#95dfff' : '#fff1be');
   }
 }
 
@@ -694,6 +748,7 @@ function drawBattle() {
   if (impact?.until > clock && impact.until - clock > .22) drawDanger(impact, true);
   dustAt(impact);
   dustAt(battle.stepDust);
+  drawRunningDust();
   if (enemy.boss) lightAt(ctx, enemyPoint.x, enemyY - 32, 88, phase === 3 ? '#ffc2644e' : '#be8dff45');
 
   const actors = [

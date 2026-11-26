@@ -34,6 +34,8 @@ let specialAt = 0;
 let attackAt = 0;
 let swingUntil = 0;
 let swingKind = 'ground';
+let bladeChain = 0;
+let chainUntil = 0;
 let jumpHeight = 0;
 let jumpVelocity = 0;
 let jumps = 0;
@@ -220,23 +222,32 @@ for (const type of ['pointerup','pointercancel','lostpointercapture']) {
     if (event.pointerId === joystick.id) resetJoystick();
   });
 }
-const pressed = action => keys.has(action) || [...held.values()].includes(action);
+const pressed = action => keys.has(action) || [...held.values()].includes(action) || action === 'crouch' && touchCrouch;
 function clearInput(keepMovement = false) {
   for (const key of keys) {
     if (!keepMovement || !['left','right','up','down'].includes(key)) keys.delete(key);
   }
   held.clear();
   chargeStarted = null;
+  bDashUsed = false;
+  touchCrouch = false;
   if (!keepMovement) resetJoystick();
   controls.forEach(button => { delete button.dataset.held; });
 }
 
 function perform(action) {
-  if (interior || !movementAllowed()) return;
+  if (!movementAllowed() || interior && !['jump','attack'].includes(action)) return;
   if (action === 'attack') beginCharge();
   if (action === 'dash') beginDash();
   if (action === 'dodge') dodge();
-  if (action === 'jump') jump();
+  if (action === 'jump') {
+    if (playableInput().y > .57 && jumpHeight <= floorUnderHero() + 4) {
+      touchCrouch = true;
+    } else if (pressed('attack') && jumpHeight > floorUnderHero() + 4) {
+      bDashUsed = true;
+      beginDash();
+    } else jump();
+  }
   if (action === 'shot') useShot();
 }
 
@@ -256,6 +267,7 @@ for (const button of controls) {
       if (!held.delete(event.pointerId)) return;
       if (!pressed(action)) {
         delete button.dataset.held;
+        if (action === 'jump') touchCrouch = false;
         if (action === 'attack') {
           if (type === 'pointerup') endCharge();
           else chargeStarted = null;
@@ -283,7 +295,10 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('keyup', event => {
   const action = keyActions[event.code];
-  if (keys.delete(action) && action === 'attack' && !pressed('attack')) endCharge();
+  if (keys.delete(action)) {
+    if (action === 'attack' && !pressed('attack')) endCharge();
+    if (action === 'jump' && !pressed('jump')) touchCrouch = false;
+  }
 });
 window.addEventListener('blur', () => clearInput());
 document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
@@ -379,7 +394,7 @@ function showTitle() {
   }]);
   panel('一美のスター街道', [
     '愛猫ソソをさらわれた一美は、やがて47都道府県を巡る旅に出る。',
-    'スティックか矢印キーで移動。Zでジャンプ、Vでダッシュ、Shiftで回避、Fでしゃがむ。Spaceで斬、Cで撃、Eで調べる・入店。'
+    'スティックか矢印キーで移動。剣を長押しして移動するとダッシュ。下を向いてジャンプボタンを押し続けるとしゃがむ。キーボードはSpaceで剣、Zでジャンプ、Cで魔法、Eで調べる。'
   ], actions);
 }
 
@@ -399,27 +414,31 @@ function settings() {
     label.append(title + ' ', volume);
     $('panel-body').append(label);
   }
+  const sound = document.createElement('button');
+  const reflect = () => {
+    sound.textContent = audio.muted ? '音を出す' : '消音';
+    sound.setAttribute('aria-pressed',String(audio.muted));
+  };
+  sound.onclick = () => {
+    audio.unlock();
+    updateAudio(audio.volume,!audio.muted);
+    reflect();
+  };
+  reflect();
+  $('panel-body').append(sound);
   graphicsSettings();
 }
 function updateAudio(volume, muted) {
   audio.setVolume(volume, muted);
-  $('mute').textContent = muted ? '音を出す' : '消音';
-  $('mute').setAttribute('aria-pressed', String(muted));
   storage.write('kazumi-audio', {volume:Math.round(volume * 100), muted,
     music:Math.round(audio.musicVolume * 100), effects:Math.round(audio.effectsVolume * 100)});
 }
-$('mute').onclick = () => {
-  audio.unlock();
-  updateAudio(audio.volume, !audio.muted);
-};
-$('mute').textContent = audio.muted ? '音を出す' : '消音';
-$('mute').setAttribute('aria-pressed', String(audio.muted));
-
 function openMenu() {
   if (innScene || doorTransition || quizOpen || shrineDefeated) return;
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
-  const actions = [['戻る', resume]];
+  const actions = [['戻る', resume], ['斬撃・魔法の装備', actionEquipment]];
+
   if (battle) actions.push(['逃走', escapeBattle], ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()]);
   else if (interior) actions.push(['保存', () => { save(true); resume(); }], ['施設の案内', servicePanel,
     Math.hypot(interior.x - 320, interior.y - 100) > 66]);
@@ -428,7 +447,6 @@ function openMenu() {
     ['観光案内', tourPanel, !nearScenicSpot()],
     ['保存', () => { save(true); resume(); }],
     ['装備', shop],
-    ['斬・撃の装備', actionEquipment],
     ['四天王の試練', openTrials, !joined],
     ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()],
     [returning && !done ? '自宅へ向かう' : '先へ進む', () => { guide(); resume(); }],
@@ -448,10 +466,6 @@ function openMenu() {
   settings();
 }
 $('pause').onclick = openMenu;
-$('interact').onclick = townInteraction;
-$('buy').onclick = openShopBuy;
-$('sell').onclick = openShopSell;
-
 function useHerb() {
   player.herbs--;
   player.hp = Math.min(maxHP(), player.hp + 35);
@@ -663,7 +677,7 @@ function jump() {
     if (jumps >= 2) return;
     climbing = false;
     jumps++;
-    jumpVelocity = jumps === 1 ? 209 : 194;
+    jumpVelocity = (jumps === 1 ? 209 : 194) + (runBlend > .4 ? 26 : 0);
   }
   groundedOn = null;
   audio.play('jump');
@@ -743,14 +757,17 @@ function swing(charged = false) {
   const burden = Math.max(0, (weapon.weight ?? 5) - level() * .55);
   const interval = (weapon.interval ?? .46) + burden * .045;
   const form = bladeForm();
-  const reach = (weapon.reach ?? 55) + (charged ? form.chargeReach : 0);
+  bladeChain = charged ? 0 : (clock < chainUntil ? bladeChain % 3 : 0) + 1;
+  chainUntil = charged ? 0 : clock + .78;
+  const finisher = bladeChain === 3;
+  const reach = (weapon.reach ?? 55) + (charged ? form.chargeReach : finisher ? 9 : 0);
   if (form.step && !pressed('crouch')) movePlayer(player.facing.x,player.facing.y,form.step * (charged ? 1.4 : 1));
   const airborne = jumpHeight > floorUnderHero() + 4;
-  const power = Math.ceil(attackPower() * (airborne ? 1.3 : 1) * (charged ? 2.1 : 1));
+  const power = Math.ceil(attackPower() * (airborne ? 1.3 : 1) * (charged ? 2.1 : finisher ? 1.32 : 1));
   attackAt = clock + interval;
   swingUntil = clock + Math.min(.35, interval * .68);
-  swingKind = charged ? 'charged' : airborne ? 'air' : level() >= 9 ? 'afterimage' : burden >= 2 ? 'heavy' : 'ground';
-  audio.play(charged ? 'special' : airborne ? 'air' : 'attack');
+  swingKind = charged ? 'charged' : finisher ? 'combo' : airborne ? 'air' : level() >= 9 ? 'afterimage' : burden >= 2 ? 'heavy' : 'ground';
+  audio.play(charged || finisher ? 'special' : airborne ? 'air' : 'attack');
   if (battle) {
     const origin = actorPoint('hero');
     if (aimHitsEnemy(origin, player.facing, reach, form.width)) {
@@ -974,6 +991,7 @@ function encounter(enemy, ambush) {
   mode = 'battle';
   player.facing = {x: 1, y: 0};
   swingUntil = clock;
+  bladeChain = chainUntil = 0;
   invulnerableUntil = clock;
   audio.play('encounter');
   audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
@@ -1150,7 +1168,7 @@ function updateField(dt) {
     const dx = player.x - cat.x, dy = player.y - cat.y;
     const gap = Math.hypot(dx, dy);
     if (gap > 20) {
-      const step = Math.min(gap - 20, dt * (destination && returning ? 415 : 120));
+      const step = Math.min(gap - 20, dt * (destination && returning ? 415 : gait === 'run' ? 174 : 120));
       cat.x += dx / gap * step;
       cat.y += dy / gap * step;
     }
@@ -1224,9 +1242,10 @@ function update(dt) {
   }
   ridePlatform();
   updateJump(dt);
+  const input = playableInput();
   if (moveWithInput(dt)) return;
+  if (checkZoneContact(input.magnitude > .01 || Boolean(dashMotion))) return;
   if (interior) return;
-  updateCharge();
   if (!paused) updateFireballs(dt);
   if (paused) return;
   if (battle) updateBattle(dt);
@@ -1240,17 +1259,10 @@ function updateUI() {
   const playing = mode === 'field' || mode === 'battle';
   $('joystick').hidden = !playing;
   $('joystick').setAttribute('aria-disabled',String(!movementAllowed()));
-  $('guard').hidden = !battle;
-  $('dodge').hidden = !playing;
-  const action = townActionLabel();
-  $('interact').hidden = !action;
-  if (action && $('interact').textContent !== action) $('interact').textContent = action;
-  const counter = shopCounterReady();
-  $('buy').hidden = $('sell').hidden = !counter;
-  $('context-actions').hidden = !action && !counter;
-  $('context-actions').dataset.room = String(Boolean(interior));
-  $('actions').hidden = $('mobility').hidden = !playing || Boolean(interior || innScene);
-  attackButton.dataset.charge = String(chargeStarted !== null && clock - chargeStarted >= .58);
+  $('actions').hidden = !playing || Boolean(innScene);
+  $('actions').inert = !movementAllowed();
+  attackButton.dataset.charge = String(!bDashUsed && chargeStarted !== null && clock - chargeStarted >= .58);
+  updatePlaceTitle();
   $('town-clock').hidden = mode !== 'field' || Boolean(battle);
   $('town-clock').textContent = (interior || player.x - chapter * span < 355 ? towns[chapter].name + '　' : '') + townTime();
   $('location').textContent = interior ? townTypes[interior.site.kind][0] : trialVitals ? (battle?.enemy.hiddenRegion !== undefined ? '隠しダンジョン' : '四天王の闘技場') : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
@@ -1283,17 +1295,17 @@ function updateUI() {
   }
   const shot = $('shot');
   const wait = shotGear === 'ring' ? magicAt - clock : specialAt - clock;
-  shot.disabled = wait > 0 || player.mp < (shotGear === 'ring' ? starterRing.mp : 10);
+  shot.setAttribute('aria-disabled', String(Boolean(interior || wait > 0 || player.mp < (shotGear === 'ring' ? starterRing.mp : 10))));
+  const duration = shotGear === 'ring' ? .55 : 15;
+  shot.style.setProperty('--cooldown', clamp(wait / duration, 0, 1) * 100);
   const shootName = shotGear === 'ring' ? '火の玉' : battle && joined && cat.hp > 0 ?
     (cat.form === 5 && cat.mp >= 999 ? '天地創生' : '双星の誓い') : 'ソソを思う';
   attackButton.title = equipped('weapon').name + '・' + bladeForm().name;
   shot.title = shootName + (wait > 0 ? '（あと' + Math.ceil(wait) + '秒）' : '');
-  shot.dataset.cooling = String(wait > 0);
-  shot.dataset.cooldown = wait > 0 ? String(Math.ceil(wait)) : '';
   shot.setAttribute('aria-description', shot.title);
   attackButton.setAttribute('aria-description',attackButton.title);
   $('level').textContent = clock < levelUntil ? 'レベルアップ！ Lv.' + level() : '';
-  $('fade').dataset.active = String(Boolean(battle && battle.age < .18));
+  $('fade').dataset.active = String(Boolean(battle && battle.age < .18 || doorTransition && clock >= doorTransition.end - .13));
 }
 
 showTitle();

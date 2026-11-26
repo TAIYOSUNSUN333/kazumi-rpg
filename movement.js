@@ -1,5 +1,9 @@
-const walkRatio = .66;
-const runPace = 142;
+const walkPace = 86;
+let bDashUsed = false;
+let touchCrouch = false;
+let runBlend = 0;
+let stepAt = 0;
+let runDust = null;
 const roofHeight = 40;
 let gait = 'idle';
 let wallContact = null;
@@ -25,7 +29,8 @@ function playableInput() {
   const x = Number(pressed('right')) - Number(pressed('left')) + joystick.x;
   const y = Number(pressed('down')) - Number(pressed('up')) + joystick.y;
   const magnitude = Math.min(1, Math.hypot(x,y));
-  const running = magnitude >= walkRatio && !pressed('guard') && !pressed('crouch');
+  const running = magnitude > .15 && chargeStarted !== null && pressed('attack') &&
+    clock - chargeStarted >= .17 && !pressed('guard') && !pressed('crouch');
   return {x,y,magnitude,running};
 }
 
@@ -112,6 +117,8 @@ function resetMovement() {
   airDashUsed = false;
   dashMotion = null;
   gait = 'idle';
+  runBlend = 0;
+  runDust = null;
 }
 
 function beginDash(emergency = false) {
@@ -134,28 +141,23 @@ function beginDash(emergency = false) {
 function beginCharge() {
   if (chargeStarted !== null || pressed('guard')) return;
   chargeStarted = clock;
-  swing();
+  bDashUsed = false;
 }
 
 function endCharge() {
-  const heldFor = chargeStarted === null ? 0 : clock - chargeStarted;
+  const started = chargeStarted;
   chargeStarted = null;
-  if (heldFor >= .58 && movementAllowed() && !interior && !pressed('guard')) swing(true);
-}
-
-function updateCharge() {
-  if (chargeStarted === null || !pressed('attack') || pressed('guard')) return;
-  if (clock - chargeStarted >= 1.05) {
-    swing(true);
-    chargeStarted = clock;
-  }
+  const wasDash = bDashUsed;
+  bDashUsed = false;
+  if (started === null || wasDash || !movementAllowed() || interior || pressed('guard')) return;
+  swing(clock - started >= .58);
 }
 
 function moveWithInput(dt) {
   const {x,y,magnitude,running} = playableInput();
   const ladder = nearbyLadder();
   if (!ladder) climbing = false;
-  if (doorStickGesture(y, ladder)) return true;
+  if (interactGesture(y,ladder)) return true;
   if (dashMotion && clock < dashMotion.until) {
     gait = 'dash';
     const {heading,emergency} = dashMotion;
@@ -187,13 +189,22 @@ function moveWithInput(dt) {
   if (climbing && Math.abs(x) >= .45) climbing = false;
   if (climbing) return false;
 
+  if (running) bDashUsed = true;
   if (magnitude > .01) {
+    runBlend += ((running ? 1 : 0) - runBlend) * Math.min(1, dt * (running ? 8 : 12));
     destination = null;
-    const pace = running ? runPace * (.82 + magnitude * .18) : 64 * (.36 + magnitude * .64);
+    const pace = walkPace * (.24 + magnitude * .76) * (1 + .8 * runBlend);
+    if (runBlend > .44 && clock >= stepAt && jumpHeight <= floorUnderHero() + 4) {
+      stepAt = clock + .24;
+      audio.play('step');
+      const spot = battle ? actorPoint('hero') : interior || player;
+      runDust = {x:spot.x,y:spot.y,battle,interior,until:clock + .24};
+    }
     const modifier = (clock < footingUntil ? .82 : 1) * (pressed('guard') ? .72 : 1) * (pressed('crouch') ? .51 : 1);
-    gait = pressed('crouch') ? 'crouch' : running ? 'run' : 'walk';
+    gait = pressed('crouch') ? 'crouch' : runBlend > .4 ? 'run' : 'walk';
     movePlayer(x,y,dt * pace * modifier);
   } else {
+    runBlend = 0;
     gait = pressed('crouch') ? 'crouch' : 'idle';
     if (wallKickUntil <= clock && wallGraceUntil <= clock) wallContact = null;
     if (!battle && destination) {
@@ -263,7 +274,7 @@ function actionEquipment() {
       actionEquipment();
     },shotGear === type || type === 'ring' && !ring]);
   }
-  panel('斬・撃の装備', [
+  panel('斬撃・魔法の装備', [
     '斬　' + weapon.name + '　' + bladeForm().name,
     shotGear === 'star' ? '撃　星の護符：MP10で必殺技。ソソとの連携に対応。' : '撃　魔法の指輪：MP4で飛んでいく火の玉。',
     ring ? '購入・獲得した装備を選べます。' : '魔法の指輪は装備屋・鍛冶屋で入手できます。'

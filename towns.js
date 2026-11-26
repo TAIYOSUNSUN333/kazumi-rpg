@@ -11,6 +11,7 @@ const townTypes = {
   church: ['教会', '司祭', 7, 19, '#9696be', '祈'],
   library: ['図書館', '司書', 9, 18, '#858573', '書'],
   bath: ['温泉', '湯守', 6, 23, '#697caa', '湯'],
+  magic: ['魔法屋', '魔術具商', 10, 20, '#7473a1', '魔'],
   smith: ['鍛冶屋', '鍛冶師', 7, 18, '#845d57', '槌'],
   home: ['民家', '家主', 6, 22, '#a38463', '家'],
   casino: ['カジノ', '遊技係', 18, 5, '#9a526a', '遊'],
@@ -40,6 +41,7 @@ const towns = [
 ])).map(([name, style, product, meal, resident, services], chapter) => {
   const base = chapter * span;
   const extra = ['inn','food','bath'].filter(kind => !services.includes(kind));
+  if ([0,8,17,26,32,46].includes(chapter)) extra.push('magic');
   const kinds = [...services, ...extra, 'secret'];
   const sites = kinds.map((kind, i) => ({
     id: chapter + '-' + kind, chapter, kind, x: base + (kind === 'secret' ? 188 : i < services.length ? [55,100,156,42,121][i] : 235 + (i - services.length) * 47),
@@ -50,7 +52,7 @@ const towns = [
 
 const townSites = new Map(towns.flatMap(town => town.sites.map(site => [site.id, site])));
 for (const [id] of prefectures.entries()) {
-  townSites.set('regional-' + id, {id:'regional-' + id, chapter:id, kind:'regional', x:id * span + 335, row:126});
+  townSites.set('regional-' + id, {id:'regional-' + id, chapter:id, kind:'regional', x:id * span + 375, row:169, upper:false});
 }
 const bankLimit = 99999999999;
 let townSeconds = 9 * 150;
@@ -63,6 +65,9 @@ let doorContact = null;
 let doorTransition = null;
 let exitDoorLock = null;
 let doorGestureConsumed = false;
+let counterContact = false;
+let placeCaptionUntil = 0;
+let lastPlace = null;
 
 const townDay = () => Math.floor(townSeconds / 3600);
 const townHour = () => (townSeconds % 3600) / 150;
@@ -176,71 +181,144 @@ function withinDoor(site, extra = 0) {
   return Math.abs(site.x - player.x) <= 24 + extra && Math.abs(site.row - player.y) <= 17 + extra;
 }
 
-function entranceNearHero() {
+function entranceNearHero(contact = false) {
   if (interior || battle || jumpHeight > 8) return null;
-  return towns[chapterOf(player.x)].sites.reduce((nearest, site) => {
-    if (site.kind === 'secret' && !(townQuests[site.chapter] > 0) || !withinDoor(site)) return nearest;
+  const chapter = chapterOf(player.x);
+  const sites = towns[chapter].sites;
+  const candidates = tourBook[chapter]?.photo ? [...sites,townSites.get('regional-' + chapter)] : sites;
+  return candidates.reduce((nearest, site) => {
+    if (site.kind === 'secret' && !(townQuests[site.chapter] > 0)) return nearest;
+    if (contact) {
+      const delta = (player.y - site.row) * (site.upper ? 1 : -1);
+      if (Math.abs(site.x - player.x) > 21 || delta < -5 || delta > 8) return nearest;
+    } else if (!withinDoor(site)) return nearest;
     return !nearest || Math.hypot(site.x - player.x,site.row - player.y) <
       Math.hypot(nearest.x - player.x,nearest.row - player.y) ? site : nearest;
   }, null);
 }
 
 function updateDoorLatch() {
-  if (exitDoorLock && !withinDoor(exitDoorLock, 5)) exitDoorLock = null;
+  if (exitDoorLock && !withinDoor(exitDoorLock,5)) exitDoorLock = null;
   doorContact = entranceNearHero();
 }
 
-function doorStickGesture(y, ladder) {
+function interactGesture(y,ladder) {
   if (y > -.32) doorGestureConsumed = false;
-  if (interior || battle || y > -.62 || doorGestureConsumed || jumpHeight > 8) return false;
-  const site = entranceNearHero();
-  if (!site || site === exitDoorLock || ladder && Math.abs(player.x - site.x) > 10) return false;
+  if (battle || y > -.62 || doorGestureConsumed || ladder) return false;
+  if (interior) return false;
+  // Up at an entrance is movement. Other points accept a short look-up gesture.
+  if (entranceNearHero(true)) return false;
+  const action = nearbyFieldAction();
+  if (!action) return false;
   doorGestureConsumed = true;
+  destination = null;
+  action.run();
+  return true;
+}
+
+function checkZoneContact(manual) {
+  if (battle || !manual || !movementAllowed() || (jumpHeight > 8 && !interior)) return false;
+  if (interior) {
+    if (interior.y >= 293 && Math.abs(interior.x - 320) < 61) return exitRoom();
+    if (interior.y > 153 || Math.abs(interior.x - 320) >= 61) counterContact = false;
+    if (!counterContact && interior.y <= 132 && Math.abs(interior.x - 320) < 55) {
+      counterContact = true;
+      servicePanel();
+      return true;
+    }
+    return false;
+  }
+  const site = entranceNearHero(true);
+  if (!site || site === exitDoorLock || nearbyLadder() && Math.abs(site.x - player.x) > 11) return false;
   return enterTownDoor(site);
 }
 
 function enterTownDoor(site) {
   if (!site || !movementAllowed() || !withinDoor(site) || interior || battle) return false;
   destination = null;
-  const [name, , start, end] = townTypes[site.kind];
+  const [name,,start,end] = townTypes[site.kind];
   const closed = siteAvailability(site);
   if (closed) {
-    panel(name + 'の入口', [towns[site.chapter].name + '　' + townTime(),
-      '営業時間 ' + start + ':00〜' + (end < start ? '翌' : '') + end + ':00', closed], [['戻る',resume]]);
-    return true;
+    exitDoorLock = site;
+    showPlaceTitle(name + ' ― ' + closed + ' ' + start + ':00〜' + (end < start ? '翌' : '') + end + ':00');
+    return false;
   }
   clearInput();
   doorContact = site;
-  doorTransition = {site,start:clock,end:clock + .30};
-  if (artMotion.matches) doorTransition.end = clock;
-  audio.play('seal');
+  doorTransition = {site,start:clock,end:clock + (artMotion.matches ? 0 : .32),exit:false};
+  audio.play('door');
+  return true;
+}
+
+function exitRoom() {
+  if (!interior || doorTransition) return false;
+  clearInput();
+  doorTransition = {site:interior.site,start:clock,end:clock + (artMotion.matches ? 0 : .24),exit:true};
+  audio.play('door');
   return true;
 }
 
 function advanceTownDoor() {
   if (clock < doorTransition.end) return;
-  const {site} = doorTransition;
+  const {site,exit} = doorTransition;
   doorTransition = null;
   player.x = site.x;
   player.y = site.row;
-  interior = {site,x:320,y:272};
-  townVisits[site.id] = (townVisits[site.id] || 0) + 1;
   resetJump();
-  audio.setTrack(site.kind === 'inn' ? 'innEntry' : 'town' + site.chapter);
+  if (exit) {
+    interior = null;
+    exitDoorLock = site;
+    fieldSafeUntil = clock + 1;
+    enterField();
+  } else {
+    interior = {site,x:320,y:266};
+    counterContact = false;
+    townVisits[site.id] = (townVisits[site.id] || 0) + 1;
+    if (site.kind === 'regional') tourismFor(site.chapter).dungeon = true;
+    audio.setTrack(fieldTrack());
+  }
   save();
 }
 
-function exitRoom() {
-  const {site} = interior;
-  interior = null;
-  player.x = site.x;
-  player.y = site.row;
-  doorContact = site;
-  exitDoorLock = site;
-  fieldSafeUntil = clock + 1;
-  resetJump();
-  enterField();
-  save();
+function showPlaceTitle(text) {
+  const banner = $('place-title');
+  for (const animation of banner.getAnimations()) animation.cancel();
+  banner.textContent = text;
+  banner.hidden = false;
+  placeCaptionUntil = performance.now() + 3200;
+  if (!artMotion.matches) banner.animate([{opacity:0,offset:0},{opacity:1,offset:.11},
+    {opacity:1,offset:.77},{opacity:0,offset:1}],{duration:3200,fill:'both'});
+}
+
+function updatePlaceTitle() {
+  if (performance.now() >= placeCaptionUntil) $('place-title').hidden = true;
+  if (mode !== 'field') {
+    lastPlace = null;
+    $('place-title').hidden = true;
+    return;
+  }
+  if (doorTransition) return;
+  const chapter = chapterOf(player.x);
+  const region = prefectures[chapter], town = towns[chapter];
+  let key, text;
+  if (innScene && innScene.stage >= 1) {
+    key = innScene.site.id + '-room';
+    text = '宿屋2階 ― 客室';
+  } else if (interior) {
+    const site = interior.site;
+    key = site.id;
+    text = site.kind === 'regional' ? prefectures[site.chapter].dungeon :
+      site.kind === 'inn' ? '宿屋 ― ' + innProfile(site.chapter).name :
+      townTypes[site.kind][0] + ' ― ' + town.name;
+  } else {
+    const district = player.x - chapter * span < 355;
+    key = chapter + '-' + (district ? 'district':'field');
+    text = region.name + ' ― ' + (district ? town.name : chapterInfo[chapter][0]);
+  }
+  if (key !== lastPlace) {
+    lastPlace = key;
+    showPlaceTitle(text);
+  }
 }
 
 function residentTalk(town) {
@@ -293,12 +371,8 @@ function roomCounterReady() {
 }
 
 function shopCounterReady() {
-  return movementAllowed() && roomCounterReady() && ['weapon','armor','items','store','food','smith'].includes(interior.site.kind) &&
+  return roomCounterReady() && ['weapon','armor','items','store','food','smith','magic'].includes(interior.site.kind) &&
     !siteAvailability(interior.site);
-}
-
-function openShopBuy() {
-  if (shopCounterReady()) servicePanel();
 }
 
 function openShopSell() {
@@ -315,15 +389,13 @@ function openShopSell() {
     panel('売る',['薬草　1個2G','所持：薬草 ' + player.herbs + '個　' + player.gold + 'G'],[
       ['薬草を1個売る', () => sell(1), batch < 1],
       ['薬草を' + batch + '個まとめて売る', () => sell(batch), batch < 2],
-      ['戻る',resume]
+      ['戻る',servicePanel]
     ]);
   }
   show();
 }
 
 function nearbyFieldAction() {
-  const site = entranceNearHero();
-  if (site) return {label:'入る', run:() => enterTownDoor(site)};
   const gem = reachableGem();
   if (gem) return {label:'拾う', run:() => collectGem(gem)};
   const fixture = nearbyFixture();
@@ -347,21 +419,10 @@ function nearbyFieldAction() {
 function townInteraction() {
   if (!movementAllowed() || battle) return;
   if (interior) {
-    if (interior.y >= 255 && Math.abs(interior.x - 320) < 57) {
-      panel('出口',['外へ出ますか？'],[['外に出る',exitRoom],['室内に戻る',resume]]);
-    } else if (roomCounterReady()) servicePanel();
+    if (roomCounterReady()) servicePanel();
     return;
   }
   nearbyFieldAction()?.run();
-}
-
-function townActionLabel() {
-  if (!movementAllowed() || battle) return '';
-  if (interior) {
-    if (interior.y >= 255 && Math.abs(interior.x - 320) < 57) return '出る';
-    return roomCounterReady() ? (interior.site.kind === 'regional' || interior.site.kind === 'secret' ? '調べる' : '話す') : '';
-  }
-  return nearbyFieldAction()?.label ?? '';
 }
 
 function trade(amount, apply, next = servicePanel) {
@@ -416,6 +477,7 @@ function servicePanel(note = '') {
   const town = towns[site.chapter];
   const [name, keeper] = townTypes[site.kind];
   const services = [['室内を歩く', resume]];
+  if (shopCounterReady()) services.push(['売る',openShopSell]);
   const closed = siteAvailability(site);
   if (closed) return panel(name + '　' + town.name, [closed, '店を出るには入口へ戻ってください。'], services);
   const welcome = townVisits[site.id] > 1 ? 'また来てくれたんですね' : (townNight() ? '夜の' : '') + town.name + 'へようこそ';
@@ -485,6 +547,11 @@ function servicePanel(note = '') {
       }]);
       break;
     }
+    case 'magic':
+      lines.push('星のかけらで作った魔術具。買った指輪はメニューで魔法枠にセットできます。');
+      if (!ring) buy(starterRing.name + 'を購入', starterRing.cost, () => { ring = true; });
+      buy('魔力を補う', 5, () => { player.mp = maxMP(); });
+      break;
     case 'smith':
       if (!ring) buy(starterRing.name + 'を作る', starterRing.cost, () => { ring = true; });
       buy('装備を手入れしてMPを回復', 7, () => { player.mp = maxMP(); });

@@ -136,7 +136,7 @@ function followCompanion(dt) {
   const dx = player.x - companionTrail.x, dy = player.y - companionTrail.y;
   const gap = Math.hypot(dx, dy);
   if (gap <= 25) return;
-  const step = Math.min(gap - 25, dt * (returning ? 420 : 132));
+  const step = Math.min(gap - 25, dt * (returning ? 420 : gait === 'run' ? 182 : 132));
   companionTrail.x += dx / gap * step;
   companionTrail.y += dy / gap * step;
 }
