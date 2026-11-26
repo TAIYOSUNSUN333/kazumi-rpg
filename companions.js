@@ -61,7 +61,7 @@ function recruitment(npc) {
   ]);
 }
 
-const nearTavern = () => Math.abs(player.x - camps[chapterOf(player.x)].x) <= 80;
+const nearTavern = () => interior?.site.kind === 'tavern' && !siteAvailability(interior.site);
 
 function tavern() {
   if (mode !== 'field' || !nearTavern()) return;

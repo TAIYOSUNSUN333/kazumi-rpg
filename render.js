@@ -161,6 +161,173 @@ function drawHome() {
   hero(405, 278, 1.5, 1);
   if (joined) drawCat(428, 280, 1.25);
 }
+function drawBuilding(site, camera) {
+  const town = towns[site.chapter];
+  const [name, , , , color, mark] = townTypes[site.kind];
+  const x = site.x - camera, door = site.row + 96;
+  const y = door - 3;
+  if (site.kind === 'secret') {
+    rect(x - 17, y - 6, 34, 14, '#333044');
+    rect(x - 12, y - 3, 24, 8, '#796e77');
+    for (const rung of [-7, 0, 7]) rect(x + rung, y - 3, 2, 8, '#c1a581');
+    label('地下', x, y - 9, '#f2d796', 9);
+    return;
+  }
+  if (!site.upper) {
+    rect(x - 20, y + 7, 40, 31, '#bfa080');
+    rect(x - 21, y + 32, 42, 6, '#242c36aa');
+    polygon([[x - 23, y + 24], [x - 15, y + 43], [x + 15, y + 43], [x + 23, y + 24]], color);
+    rect(x - 6, y + 1, 12, 19, '#47364b');
+    rect(x + 2, y + 10, 2, 2, '#f4ce88');
+    for (const offset of [-15,9]) rect(x + offset, y + 10, 6, 9,
+      townNight() && !siteAvailability(site) ? '#ffcf79' : '#70929e');
+    label(mark, x, y + 31, '#ffe1ab', 9);
+    if (doorContact === site || Math.abs(player.x - site.x) <= 12) label(name, x, y - 5, '#fff0cf', 10);
+    return;
+  }
+  const tall = ['church','hall','library'].includes(site.kind);
+  const highRoof = tall || town.style === '急勾配' ? 52 : 41;
+  rect(x - 21, y + 6, 43, 7, '#1a273677');
+  rect(x - 19, y - 30, 38, 39, town.style === '白壁' ? '#dbd4be' : '#bfa080');
+  if (town.style === '木組み' || town.style === '杭上げ') {
+    rect(x - 18, y - 26, 3, 33, '#654735');
+    rect(x + 14, y - 26, 3, 33, '#654735');
+  }
+  if (town.style === '石積み' || town.style === 'レンガ') {
+    for (const shift of [-18,-9,0]) rect(x - 18, y + shift, 36, 1, '#8b7065');
+  }
+  const flat = site.kind === 'store' || town.style === '土壁';
+  polygon([[x - 24, y - 26], [x - (flat ? 18 : 4), y - highRoof],
+    [x + (flat ? 18 : 4), y - highRoof], [x + 24, y - 26]], color);
+  rect(x - 23, y - 28, 46, 3, '#514352');
+  if (tall) diamond(x, y - highRoof, 3, 6, '#e7ce9e');
+  for (const side of [-1,1]) {
+    const wx = x + side * 12 - 3;
+    rect(wx - 1, y - 18, 8, 11, '#4b434f');
+    rect(wx, y - 17, 6, 9, townNight() && !siteAvailability(site) ? '#ffcf79' : '#70929e');
+    rect(wx + 2, y - 17, 1, 9, '#a58a73');
+  }
+  rect(x - 5, y - 11, 10, 20, '#463345');
+  rect(x + 2, y - 2, 2, 2, '#f4ce88');
+  rect(x - 8, y - 23, 16, 10, '#584554');
+  label(mark, x, y - 15, '#ffe1ab', 8);
+  if (doorContact === site || Math.abs(player.x - site.x) <= 12) label(name, x, y + 20, '#fff0cf', 10);
+}
+
+function drawTown(chapter, camera) {
+  for (const town of towns) {
+    if (Math.abs(town.chapter - chapter) > 1) continue;
+    for (const site of town.sites) {
+      if (site.x < camera - 30 || site.x > camera + 665 ||
+          site.kind === 'secret' && !(townQuests[site.chapter] > 0)) continue;
+      drawBuilding(site, camera);
+    }
+  }
+  const town = towns[chapter];
+  const resident = townResident(town);
+  if (resident.x >= camera && resident.x <= camera + 640) {
+    drawCompanion('タク', resident.x - camera, resident.y + 96, .66, Math.sign(Math.cos(townSeconds * .8)), Math.sin(townSeconds * 12));
+    label(town.resident, resident.x - camera, resident.y + 70, '#ffe0a9', 9);
+  }
+}
+
+const roomDecor = {
+  weapon:'剣架', armor:'鎧掛', items:'薬瓶', inn:'寝台', tavern:'樽',
+  bank:'金庫', store:'商品棚', food:'食卓', church:'祭壇', library:'書架',
+  bath:'湯船', smith:'金床', home:'戸棚', casino:'遊技台', ruin:'石像',
+  hall:'掲示板', secret:'石櫃'
+};
+
+function drawRoomDetail(kind, x, y) {
+  const metal = '#c6ccd0', wood = '#d9ac7a';
+  if (kind === 'weapon') {
+    polygon([[x-4,y+12],[x+3,y-9],[x+7,y-11],[x+7,y-6],[x,y+13]], metal);
+    rect(x-7,y+7,14,3,wood);
+  } else if (kind === 'armor') {
+    polygon([[x-11,y-7],[x-5,y-11],[x+5,y-11],[x+11,y-7],[x+8,y+10],[x-8,y+10]], metal);
+    rect(x-6,y+2,12,2,'#73738a');
+  } else if (kind === 'bank' || kind === 'secret') {
+    rect(x-13,y-10,26,21,'#594a65');
+    rect(x-10,y-7,20,15,metal);
+    diamond(x,y,3,4,'#424055');
+  } else if (kind === 'library' || kind === 'hall') {
+    for (const diff of [-9,-2,5]) {
+      rect(x+diff,y-8,6,18,diff === -2 ? '#f3dcaa' : metal);
+      rect(x+diff+1,y+1,4,1,'#8a6277');
+    }
+  } else if (kind === 'bath') {
+    rect(x-14,y-5,28,11,'#a6d1d8');
+    for (const diff of [-8,0,8]) rect(x+diff,y-9,2,6,'#eadbb9');
+  } else if (kind === 'church') {
+    diamond(x,y-3,8,13,'#f0cd8d');
+    rect(x-14,y+9,28,3,wood);
+  } else if (kind === 'smith') {
+    rect(x-12,y-6,24,5,metal);
+    rect(x-6,y-1,12,10,'#4c4657');
+    rect(x-10,y+8,20,3,metal);
+  } else if (kind === 'casino') {
+    rect(x-10,y-9,20,19,'#9d5268');
+    for (const diff of [-5,0,5]) diamond(x+diff,y,2,2,'#fff0b7');
+  } else {
+    rect(x-11,y-8,22,18,wood);
+    rect(x-7,y-10,14,4,metal);
+    rect(x-7,y-5,14,2,'#805b66');
+  }
+}
+
+function drawInterior() {
+  const {site, x, y} = interior;
+  const town = towns[site.chapter];
+  const [name, keeper, , , color] = townTypes[site.kind];
+  rect(0, 0, 640, 360, '#202437');
+  rect(38, 45, 564, 271, '#58465a');
+  rect(50, 79, 540, 225, site.kind === 'secret' || site.kind === 'ruin' ? '#585469' : '#86694f');
+  for (let row = 80; row < 304; row += 24) {
+    rect(52, row, 536, 1, '#e0bf9a44');
+    for (let col = 52 + (row % 48 ? 0 : 28); col < 588; col += 56) rect(col, row, 1, 24, '#503b4144');
+  }
+  rect(226, 154, 188, 91, color);
+  rect(232, 160, 176, 79, '#c49d8333');
+  if (site.kind !== 'secret' && site.kind !== 'ruin') {
+    for (const wx of [122, 484]) {
+      rect(wx, 56, 31, 18, '#282b42');
+      rect(wx + 3, 58, 25, 13, townNight() ? '#ffc670' : '#a2c4cb');
+      rect(wx + 14, 58, 2, 13, '#7c665a');
+    }
+  }
+  label(name + ' · ' + town.name, 320, 68, '#ffe2b6', 16);
+  const furniture = roomFurniture(site.kind);
+  for (const [index, box] of furniture.entries()) {
+    rect(box.x + 4, box.y + 6, box.w, box.h, '#342f404d');
+    rect(box.x, box.y, box.w, box.h, site.kind === 'bath' ? '#597f9a' : '#644756');
+    rect(box.x + 3, box.y + 3, box.w - 6, box.h - 7, color);
+    if (index === 0) {
+      drawRoomDetail(site.kind, box.x + box.w / 2, box.y + box.h / 2);
+      label(roomDecor[site.kind], box.x + box.w / 2, box.y - 5, '#ffe0a7', 10);
+    } else if (['home','inn'].includes(site.kind)) {
+      rect(box.x + 8, box.y + 7, 23, box.h - 15, '#eacbb1');
+    } else {
+      for (let i = 12; i < box.w - 7; i += 17) {
+        rect(box.x + i, box.y + 9, 8, 12, site.kind === 'bath' ? '#9cd4d8' : '#d9af7c');
+      }
+    }
+  }
+  rect(292, 300, 56, 16, '#2d293f');
+  label('出口', 320, 298, '#ffe6b8', 12);
+  if (site.kind === 'secret') {
+    rect(301, 88, 38, 20, site.seal.solved ? '#999182' : '#ba8664');
+    rect(303, 96, 34, 3, '#685171');
+    diamond(320, 99, 4, 5, '#ffda8a');
+  } else {
+    drawCompanion(site.chapter % 2 ? '恵美ちゃん' : '一郎', 320, 108, 1, 1);
+    label(keeper, 320, 80, '#ffe0a7', 12);
+  }
+  if (joined) drawCat(clamp(x - 22, 47, 593), y + 3, .8);
+  const companion = currentCompanion();
+  if (companion) drawCompanion(companion.name, clamp(x - 30, 47, 593), y + 8, .9, player.facing.x);
+  hero(x, y, 1.1, player.facing.x);
+}
+
 function drawField(chapter, camera) {
   const [ground, leaf] = palettes[chapter];
   const light = ctx.createLinearGradient(0, 0, 0, 360);
@@ -189,6 +356,7 @@ function drawField(chapter, camera) {
     }
     diamond(x + 15, 145 + i % 3 * 38, 2, 2, '#e4cf9c');
   }
+  drawTown(chapter, camera);
   for (const gem of gems) {
     if (gem.on && Math.abs(gem.x - player.x) < 640) diamond(gem.x - camera, gem.row + 89, 6, 9, '#ffe5a0');
   }
@@ -335,6 +503,7 @@ function drawBattle() {
 }
 
 function render() {
+  if (interior && mode === 'field') return drawInterior();
   const chapter = chapterOf(player.x);
   const camera = clamp(player.x - 245, -85, limit - 515);
   if (mode === 'title' || mode === 'home') drawHome();

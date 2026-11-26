@@ -10,6 +10,7 @@
   <script defer src="riddles.js"></script>
   <script defer src="audio.js"></script>
   <script defer src="companions.js"></script>
+  <script defer src="towns.js"></script>
   <script defer src="game.js"></script>
   <script defer src="render.js"></script>
 </head>
@@ -18,6 +19,7 @@
     <canvas id="scene" width="640" height="360" aria-label="一美の冒険"></canvas>
     <header id="hud" hidden>
       <strong id="location"></strong>
+      <div id="town-clock"></div>
       <div id="vitals"></div>
       <div id="progress"></div>
       <div id="companion-status" hidden></div>
@@ -28,6 +30,7 @@
     <p id="message" role="status" aria-live="polite"></p>
     <div id="portrait">スマートフォンを横にすると遊びやすくなります</div>
     <nav id="menu" aria-label="メニュー">
+      <button id="interact" hidden>話す</button>
       <button id="pause" hidden>メニュー</button>
       <button id="mute" aria-pressed="false">消音</button>
     </nav>

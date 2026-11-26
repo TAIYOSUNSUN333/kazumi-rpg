@@ -69,7 +69,7 @@ audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true)
 function save(explicit = false) {
   if (trialVitals) return false;
   const success = storage.write(saveKey, {
-    version: 7, x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 8, town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
@@ -84,9 +84,9 @@ function save(explicit = false) {
 
 function load(data) {
   if (!data || typeof data !== 'object') return;
-  const current = [4, 5, 6, 7].includes(data.version);
-  ring = [5, 6, 7].includes(data.version) && data.ring === true;
-  pots.forEach((pot, i) => { pot.broken = [5, 6, 7].includes(data.version) && data.pots?.[i] === true; });
+  const current = [4, 5, 6, 7, 8].includes(data.version);
+  ring = [5, 6, 7, 8].includes(data.version) && data.ring === true;
+  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
   player.xp = numeric(data.xp, 0, 0, 1000000);
@@ -94,7 +94,7 @@ function load(data) {
   player.shards = numeric(modern ? data.shards : data.art, 0, 0, 100000);
   player.x = modern || oldMap ? numeric(data.x, 25, 0, limit) : 25;
   player.y = modern || oldMap ? numeric(data.y, 104, 44, 162) : 104;
-  player.gold = modern ? numeric(data.gold, 0, 0, 1000000) : Math.floor(player.xp / 3);
+  player.gold = modern ? numeric(data.gold, 0, 0, bankLimit) : Math.floor(player.xp / 3);
   player.herbs = modern ? numeric(data.herbs, 0, 0, 10000) : 0;
   player.weapon = numeric(data.weapon, 0, 0, equipment.weapon.length - 1);
   player.armor = numeric(data.armor, 0, 0, equipment.armor.length - 1);
@@ -149,6 +149,7 @@ function load(data) {
       for (const enemy of enemies.filter(enemy => enemy.chapter >= 9)) enemy.hp = enemy.max;
     }
   }
+  loadTowns(data.town);
 }
 
 function say(text, duration = 4) {
@@ -172,7 +173,7 @@ function clearInput() {
 }
 
 function perform(action) {
-  if (paused || (mode !== 'field' && mode !== 'battle') || (battle && battle.age < .4)) return;
+  if (interior || paused || (mode !== 'field' && mode !== 'battle') || (battle && battle.age < .4)) return;
   if (action === 'attack') swing();
   if (action === 'dodge') dodge();
   if (action === 'special') special();
@@ -206,6 +207,7 @@ for (const button of controls) {
   });
 }
 window.addEventListener('keydown', event => {
+  if (event.code === 'KeyE' && !event.repeat) townInteraction();
   if (paused || mode === 'title' || mode === 'home' || event.target.matches('input')) return;
   const action = keyActions[event.code];
   if (!action) return;
@@ -224,8 +226,9 @@ document.addEventListener('pointerdown', () => audio.unlock(), {once: true, capt
 document.addEventListener('keydown', () => audio.unlock(), {once: true, capture: true});
 
 function fieldTrack() {
+  if (interior) return 'town' + interior.site.chapter;
   const chapter = chapterOf(player.x);
-  if (Math.abs(player.x - camps[chapter].x) < 45) return chapter === 0 ? 'home' : 'village';
+  if (player.x - chapter * span >= 0 && player.x - chapter * span < 193) return 'town' + chapter;
   return [1, 3, 6, 9, 11].includes(chapter) ? 'dungeon' : 'field';
 }
 
@@ -307,7 +310,7 @@ function showTitle() {
   }]);
   panel('一美のスター街道', [
     '愛猫ソソをさらわれた一美は、十二の土地を越えてソソを探しに行く。',
-    '十字キーで移動。剣で敵を倒すか、接触して戦闘へ。キーボードは矢印キー、Spaceで攻撃、Shiftで回避、Zでジャンプ、Cで魔法、Xで必殺技。'
+    '十字キーで移動。剣で敵を倒すか、接触して戦闘へ。キーボードは矢印キー、Spaceで攻撃、Shiftで回避、Zでジャンプ、Cで魔法、Xで必殺技、Eで街の人や出口を調べる。'
   ], actions);
 }
 
@@ -341,10 +344,11 @@ function openMenu() {
   if (mode !== 'field' && mode !== 'battle') return;
   const actions = [['戻る', resume]];
   if (battle) actions.push(['逃走', escapeBattle], ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()]);
+  else if (interior) actions.push(['保存', () => { save(true); resume(); }], ['施設の案内', servicePanel,
+    Math.hypot(interior.x - 320, interior.y - 100) > 66]);
   else actions.push(
     ['保存', () => { save(true); resume(); }],
     ['装備', shop],
-    ['酒場', tavern, !nearTavern()],
     ['四天王の試練', openTrials, !joined],
     ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()],
     [returning && !done ? '自宅へ向かう' : '先へ進む', () => { guide(); resume(); }],
@@ -358,12 +362,13 @@ function openMenu() {
   panel('メニュー', [
     '武器 ' + equipped('weapon').name + '　防具 ' + equipped('armor').name,
     '薬草 ' + player.herbs + '　星の欠片 ' + player.shards,
-    nearTavern() || battle ? '' : '酒場は各章の野営地にある。',
+    nearTavern() || battle ? '' : '酒場のある街では建物の扉から入れる。',
     '仲間 ' + ([...player.party, ...(joined ? ['ソソ'] : [])].join('、') || 'なし')
   ], actions);
   settings();
 }
 $('pause').onclick = openMenu;
+$('interact').onclick = townInteraction;
 
 function useHerb() {
   player.herbs--;
@@ -453,7 +458,7 @@ function guide() {
   destination = {x: target.x, y: target.row};
 }
 
-function openShrine(shrine, chapter) {
+function openShrine(shrine, chapter, optional) {
   if (shrine.solved) return;
   destination = null;
   quizOpen = true;
@@ -475,15 +480,16 @@ function openShrine(shrine, chapter) {
       lines.push(helper === 'ソソ' ? 'ソソが足もとで鳴いた。' :
         helper + (wrong === 3 ? '「ヒントを手がかりに、四つの答えを見比べよう」' : '「焦らなくていいよ。ゆっくり考えよう」'));
     }
-    panel('石碑のなぞなぞ', lines, [
+    panel(optional?.title ?? '石碑のなぞなぞ', lines, [
       ...riddleChoices(question).map(choice => [choice, () => {
         if (choice === question.answer) {
           shrine.solved = true;
           shrine.wrong = 0;
-          sealEffect = {x: shrine.x, y: shrine.row, until: clock + .9};
+          if (!optional) sealEffect = {x: shrine.x, y: shrine.row, until: clock + .9};
           close();
           audio.play('seal');
-          say('正解！ 封印が解除された。' + chapters[chapter][1], 7);
+          if (optional) optional.success();
+          else say('正解！ 封印が解除された。' + chapters[chapter][1], 7);
           save();
           return;
         }
@@ -507,8 +513,9 @@ function openShrine(shrine, chapter) {
         show(penalty);
       }]),
       ['あとで解く', () => {
-        player.x = shrine.x - 19;
+        if (!optional) player.x = shrine.x - 19;
         close();
+        optional?.later();
         save();
       }]
     ]);
@@ -525,6 +532,7 @@ function openShrine(shrine, chapter) {
 }
 
 function movePlayer(dx, dy, distance) {
+  if (interior) return moveInRoom(dx, dy, distance);
   if (!dx && !dy) return;
   if (battle) {
     if (dx) {
@@ -542,8 +550,10 @@ function movePlayer(dx, dy, distance) {
   const gate = mid.hp ? mid : boss;
   const boundary = returning ? limit : !shrines[chapter].solved ? shrines[chapter].x + 19 :
     gate.hp ? gate.homeX + 17 : limit;
-  player.x = clamp(player.x + player.facing.x * distance, 0, boundary);
-  player.y = clamp(player.y + player.facing.y * distance, 44, 162);
+  const nextX = clamp(player.x + player.facing.x * distance, 0, boundary);
+  const nextY = clamp(player.y + player.facing.y * distance, 44, 162);
+  if (!buildingBlocks(nextX, player.y)) player.x = nextX;
+  if (!buildingBlocks(player.x, nextY)) player.y = nextY;
 }
 
 function resetJump() {
@@ -776,6 +786,7 @@ function defeat(title, detail = '呼びかけても返事はなく、足もと�
       }
       battle = null;
       shrineDefeated = false;
+      interior = null;
       resetCat();
       player.x = camps[checkpoint].x;
       player.y = 104;
@@ -983,6 +994,7 @@ const closeTo = (x, y, radius) => Math.hypot(player.x - x, player.y - y) < radiu
 
 function updateField(dt) {
   followCompanion(dt);
+  if (checkTownDoor()) return;
   const chapter = chapterOf(player.x);
   if (joined) {
     const dx = player.x - cat.x, dy = player.y - cat.y;
@@ -1056,6 +1068,7 @@ function updateField(dt) {
 function update(dt) {
   if (paused || (mode !== 'field' && mode !== 'battle')) return;
   clock += dt;
+  tickTown(dt);
   if (messageUntil && clock >= messageUntil) {
     messageUntil = 0;
     $('message').textContent = '';
@@ -1078,6 +1091,7 @@ function update(dt) {
     if (distance < 1) destination = null;
     else movePlayer(x, y, Math.min(distance, dt * (returning ? 390 : 83)));
   }
+  if (interior) return;
   if (pressed('attack')) swing();
   if (paused) return;
   if (battle) updateBattle(dt);
@@ -1086,7 +1100,13 @@ function update(dt) {
 
 function updateUI() {
   const chapter = chapterOf(player.x);
-  $('location').textContent = trialVitals ? '四天王の闘技場' : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
+  const action = townActionLabel();
+  $('interact').hidden = !action;
+  $('interact').textContent = action;
+  $('actions').hidden = Boolean(interior) || mode === 'title' || mode === 'home';
+  $('town-clock').hidden = mode !== 'field' || Boolean(battle);
+  $('town-clock').textContent = (interior || player.x - chapter * span < 193 ? towns[chapter].name + '　' : '') + townTime();
+  $('location').textContent = interior ? townTypes[interior.site.kind][0] : trialVitals ? '四天王の闘技場' : mode === 'home' ? '一美の家' : '第' + (chapter + 1) + '章　' + chapterInfo[chapter][0];
   $('vitals').textContent = 'Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP();
   $('progress').textContent = '経験値 ' + player.xp + '/' + nextXp() + '（あと' + (nextXp() - player.xp) + '）　' + player.gold + 'G　攻' + attackPower() + ' / 防' + defense();
   $('enemy-status').hidden = !battle;

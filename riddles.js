@@ -185,7 +185,7 @@ function shrineQuestion(shrine, chapter) {
   const saved = riddlesById.get(shrine.questionId);
   if (saved) return saved;
   const tier = riddles[shrineTier(chapter)];
-  const assigned = new Set(shrines.map(entry => entry.questionId));
+  const assigned = new Set([...shrines, ...towns.map(town => town.sites.at(-1).seal)].map(entry => entry.questionId));
   const available = tier.filter(question => !assigned.has(question.id));
   const question = available[Math.floor(Math.random() * available.length)];
   shrine.questionId = question.id;

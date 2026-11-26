@@ -92,3 +92,8 @@ button:disabled { opacity: .55; }
 @media (orientation: landscape) and (max-height: 420px) {
   #panel[data-quiz] { max-height: 86%; }
 }
+#town-clock { color: #e9cfab; }
+#interact { background: #695777f2; }
+@media (pointer: coarse) {
+  #interact { min-width: 58px; }
+}

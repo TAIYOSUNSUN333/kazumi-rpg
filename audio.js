@@ -10,6 +10,17 @@ const scores = {
   genesis: [136, 'strings', [38, 46, 41, 48], [74, 81, 86, 89, 86, 84, 81, 77]],
   boss: [128, 'strings', [38, 37, 41, 34], [62, 69, 65, 63, 62, 70, 67, 65]]
 };
+const townMelodies = [
+  [65,69,72,74,72,69,67,65], [67,71,76,74,71,67,64,66], [62,66,69,76,74,69,66,64],
+  [60,63,67,72,67,65,63,62], [64,67,72,79,76,74,72,67], [65,68,72,77,75,72,68,65],
+  [58,62,65,69,65,62,60,58], [61,65,68,73,71,68,65,63], [69,72,76,79,76,72,71,69],
+  [67,70,74,79,77,74,70,67], [64,69,73,76,73,71,69,64], [62,65,69,74,72,69,65,62]
+];
+townMelodies.forEach((melody, index) => {
+  const root = melody[0] - 17;
+  scores['town' + index] = [76 + index * 3, index % 3 === 1 ? 'flute' : 'piano',
+    [root, root + 5, root - 2, root + 2], melody];
+});
 const effects = {
   seal: [55, 60, 64, 67, 72, 79],
   jump: [55, 62], air: [74, 62, 55], magic: [67, 74, 81], pot: [48, 58, 44],
@@ -99,6 +110,11 @@ class GameAudio {
       if (voice === 'strings' && index % 4 === 0) {
         this.note(root + 7, this.next, beat * 4, .07, voice, this.music);
         this.note(root + 12, this.next, beat * 4, .06, voice, this.music);
+      }
+      if (this.track.startsWith('town') && (index === 2 || index === 7)) {
+        const region = Number(this.track.slice(4));
+        const pitch = [75,69,53,62,78,67,57,72,84,65,79,55][region];
+        this.note(pitch, this.next + .05, beat * (region % 3 + 1), .027, region % 2 ? 'strings' : 'flute', this.music);
       }
       this.next += beat;
       this.step = (this.step + 1) % 32;
