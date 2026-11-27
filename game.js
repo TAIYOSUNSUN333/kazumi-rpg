@@ -515,6 +515,12 @@ function showTitle() {
     '愛猫ソソをさらわれた一美は、やがて47都道府県を巡る旅に出る。',
     '画面を押したまま指をずらすか、矢印キーで移動。剣を長押しして移動するとダッシュ。下を向いてジャンプボタンを押し続けるとしゃがむ。キーボードはSpaceで剣、Zでジャンプ、Cで魔法、Eで調べる。'
   ], actions);
+  const release = $('game').dataset.release;
+  if (release) {
+    const versionLine = document.createElement('p');
+    versionLine.textContent = release;
+    $('panel-body').append(versionLine);
+  }
 }
 
 function settings() {
@@ -687,7 +693,47 @@ function showSaveSlots() {
       if (storage.write('kazumi-slot',slot)) location.reload();
     },slot === saveSlot];
   });
-  panel('セーブ枠',['切り替えると、そのセーブ枠のタイトルに戻ります。'],[...buttons,['戻る',saveMenu]]);
+  const returnToMenu = mode === 'title' ? showTitle : saveMenu;
+  if (mode === 'title') {
+    const data = readAdventure();
+    if (data) buttons.push(['この枠を書き出す', () => exportSave(data)]);
+    buttons.push(['この枠に読み込む', importSave]);
+  }
+  panel('セーブ枠',['切り替えると、そのセーブ枠のタイトルに戻ります。'],[...buttons,['戻る',returnToMenu]]);
+}
+
+function exportSave(data) {
+  const file = new Blob([JSON.stringify(data)], {type:'application/json'});
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'kazumi-save-' + saveSlot + '.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function importSave() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    let data;
+    try { data = JSON.parse(await file.text()); } catch {}
+    if (!validAdventure(data)) {
+      alert('一美のスター街道のセーブファイルを選んでください。');
+      return;
+    }
+    const previous = readAdventure();
+    if (previous && !confirm('セーブ枠 ' + saveSlot + ' を上書きしますか？')) return;
+    if ((previous && !storage.write(saveKey + '-backup',previous)) || !storage.write(saveKey,data)) {
+      alert('セーブデータを保存できませんでした。');
+      return;
+    }
+    showTitle();
+  };
+  input.click();
 }
 
 function useHerb() {

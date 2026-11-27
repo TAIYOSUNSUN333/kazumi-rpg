@@ -1,6 +1,6 @@
 // Change the cache name whenever a published app shell changes.
 const cachePrefix = 'kazumi-rpg-';
-const cacheName = cachePrefix + 'action-13';
+const cacheName = cachePrefix + 'action-14';
 const shellFiles = [
   './', './index.html', './game.css', './manifest.webmanifest',
   './prefectures.js', './world.js', './riddles.js', './stones.js', './bgm.js', './audio.js',
@@ -16,7 +16,7 @@ const scope = self.registration.scope;
 const shellURLs = new Set(shellFiles.map(path => new URL(path,scope).href));
 
 self.addEventListener('install',event => {
-  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shellFiles)).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shellFiles.map(path => new Request(path, {cache:'reload'})))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate',event => {
@@ -42,6 +42,15 @@ self.addEventListener('fetch',event => {
   event.respondWith((async () => {
     const cache = await caches.open(cacheName);
     const key = isRoot ? new URL('./',scope).href : event.request;
+    if (isRoot) {
+      try {
+        const response = await fetch(event.request, {cache:'no-cache'});
+        if (response.ok) {
+          try { await cache.put(key,response.clone()); } catch {}
+          return response;
+        }
+      } catch {}
+    }
     const saved = await cache.match(key);
     if (saved) return saved;
     const response = await fetch(event.request);

@@ -1,5 +1,7 @@
 [build]
   publish = "."
+  # Keep the current production deploy while GitHub Pages hosts the playtest.
+  ignore = "true"
 
 [[headers]]
   for = "/assets/bgm/*"
