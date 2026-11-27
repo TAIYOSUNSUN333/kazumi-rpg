@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>BGM管理 | 一美のスター街道</title>
+<link rel="stylesheet" href="admin.css">
+<script defer src="admin.js"></script>
+</head>
+<body>
+<main>
+<header><p>一美のスター街道</p><h1>BGM管理</h1></header>
+<form id="login">
+<label for="key">管理キー</label>
+<input id="key" type="password" autocomplete="off" required maxlength="64">
+<button>ログイン</button>
+</form>
+<p id="message" role="status"></p>
+<section id="library" hidden>
+<div class="bar"><span id="count"></span><button id="refresh">更新</button><button id="logout">ログアウト</button></div>
+<p>端末から4 MiB以下のMP3を選ぶと登録が始まります。</p>
+<div id="tracks"></div>
+</section>
+<details><summary>管理画面のURL・QRコード</summary>
+<p><a id="direct"></a></p><img id="qr" alt="管理画面のQRコード" width="176" height="176">
+<p id="qr-error" hidden>QRコードはNetlifyの公開先で表示されます。</p>
+</details>
+</main>
+</body>
+</html>

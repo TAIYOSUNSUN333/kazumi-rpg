@@ -1,0 +1,23 @@
+:root { color-scheme:dark; font:16px system-ui,sans-serif; background:#101724; color:#f2ebde; }
+* { box-sizing:border-box; }
+body { margin:0; }
+main { max-width:36rem; padding:24px 16px 48px; margin:auto; }
+header p { color:#d6b785; margin:0; }
+h1 { margin:.3rem 0 1.3rem; font-size:1.9rem; }
+h2 { margin:0; font-size:1.12rem; }
+article,form,details { background:#1b2535; border:1px solid #35465c; border-radius:14px; padding:14px; margin:0 0 12px; }
+article p { margin:.4rem 0; }
+small, .status { color:#d2dce9; overflow-wrap:anywhere; }
+button,input,summary { min-height:44px; font:inherit; }
+button { background:#354765; border:1px solid #647b9d; color:inherit; border-radius:8px; padding:6px 12px; }
+button:disabled { opacity:.48; }
+input { max-width:100%; border-radius:6px; padding:.35rem; }
+input[type=password] { display:block; width:100%; margin:.4rem 0 .65rem; }
+input[type=file] { display:block; width:100%; }
+.bar,.actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.bar span { margin-right:auto; }
+progress,audio { width:100%; margin-top:8px; }
+a { color:#b8d8ff; overflow-wrap:anywhere; }
+#message { color:#ffcb9f; }
+summary { cursor:pointer; }
+[hidden] { display:none !important; }

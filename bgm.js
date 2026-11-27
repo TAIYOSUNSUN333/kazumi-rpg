@@ -90,3 +90,5 @@ function openSoundTest() {
   }
   updateRegistration();
 }
+
+if (typeof module !== 'undefined') module.exports = {bgmCatalog};
