@@ -78,6 +78,7 @@ let doorTransition = null;
 let exitDoorLock = null;
 let doorGestureConsumed = false;
 let counterContact = false;
+let facilityGathering = null;
 let placeCaptionUntil = 0;
 let lastPlace = null;
 
@@ -291,7 +292,7 @@ function advanceTownDoor() {
     counterContact = false;
     townVisits[site.id] = (townVisits[site.id] || 0) + 1;
     if (site.kind === 'regional') tourismFor(site.chapter).dungeon = true;
-    audio.setTrack(fieldTrack());
+    setFieldTrack();
   }
   save();
 }
@@ -468,22 +469,34 @@ function bankPanel() {
 }
 
 function shareTownEvent(site) {
-  const companion = currentCompanion();
-  if (!companion) return;
-  const event = towns[site.chapter].name + 'の' + townTypes[site.kind][0] + 'で過ごした';
-  const modifier = companion.name === 'クルミ' && site.kind === 'bath' ? -1 :
-    companion.name === '恵美ちゃん' && site.kind === 'inn' ? 4 : 2;
-  const response = companion.affinity >= 15 ? '「また一緒に来ようね」' : modifier < 0 ?
-    '「羽がぬれるから、私は縁側で待ってるね」' : '「旅の途中でひと息つけてよかった」';
-  if (!companion.history.includes(event)) {
-    remember(companion, event);
-    companion.affinity = clamp(companion.affinity + modifier, -100, 100);
+  const guests = facilityGuests();
+  if (guests.length < 2) return;
+  const place = towns[site.chapter].name;
+  const event = place+'の'+townTypes[site.kind][0]+'で過ごした';
+  const lines = [];
+  for (const guest of guests.slice(1)) {
+    if (guest.kind === 'cat') {
+      lines.push('ソソは椅子のそばで丸くなった。');
+      continue;
+    }
+    const {member,kind,name} = guest;
+    const amount = kind === 'owl' && site.kind === 'bath' ? -1 : guest.fit < 0 ? 1 : 3;
+    if (!member.history.includes(event)) {
+      remember(member,event);
+      member.affinity = clamp(member.affinity+amount,-100,100);
+    }
+    if (kind === 'monster') lines.push(name+'は' + (member.affinity >= 15 ? '一美の足元でくつろいだ。' : '部屋の匂いを確かめた。'));
+    else lines.push(name+'「'+(amount < 0 ? '羽がぬれるから、縁側で待ってるね。' :
+      member.affinity >= 15 ? 'また一緒に休みに来よう。' : site.kind === 'food' || site.kind === 'restaurant' ?
+        'この町の味を覚えておきたいね。' : '歩き疲れたね。少し話していこう。')+'」');
   }
+  facilityGathering = {guests,site,start:performance.now()};
   save();
-  panel('仲間とのひととき', [event + '。', companion.name + ' ' + response], [['戻る', servicePanel]]);
+  panel('仲間とのひととき',lines,[['戻る',servicePanel]]);
 }
 
 function servicePanel(note = '') {
+  facilityGathering = null;
   if (!interior) return;
   const {site} = interior;
   if (site.kind === 'regional') return dungeonPanel();
@@ -645,7 +658,7 @@ function servicePanel(note = '') {
       }), site.seal.solved]);
       break;
   }
-  if (currentCompanion() && ['inn','food','bath','tavern'].includes(site.kind)) {
+  if ((activeCompanions().length || joined) && ['inn','food','restaurant','bath','tavern'].includes(site.kind)) {
     services.push(['仲間と過ごす', () => shareTownEvent(site)]);
   }
   panel(name + '　' + town.name, lines, services);

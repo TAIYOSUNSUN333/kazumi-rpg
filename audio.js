@@ -48,6 +48,7 @@ for (let index = townMelodies.length; index < prefectures.length; index++) {
     [root, root + 5, root - 2, root + 2], melody];
 }
 const effects = {
+  'inn-owl':[66,60], 'inn-snore':[35,32], 'inn-laugh':[72,76,74],
   purchase:[65,69,74], summon:[45,57,62,69,74,81,86], water:[78,82,74], quake:[35,29], step:[41], door:[61,66,73],
   seal: [55, 60, 64, 67, 72, 79],
   stoneReward: [62, 66, 69, 74, 78, 81, 86],
@@ -86,6 +87,9 @@ class GameAudio {
     this.effectsVolume = .8;
     this.muted = false;
     this.track = 'title';
+    this.recording = 'title';
+    this.recordingStatus = new Map();
+    this.recordingChecks = new Map();
     this.step = 0;
   }
 
@@ -98,6 +102,8 @@ class GameAudio {
       this.master.connect(context.destination);
       this.bgm = context.createGain();
       this.bgm.connect(this.master);
+      this.sceneMix = context.createGain();
+      this.sceneMix.connect(this.bgm);
       this.sfx = context.createGain();
       this.sfx.connect(this.master);
       this.waves = {};
@@ -107,11 +113,9 @@ class GameAudio {
       this.noise = context.createBuffer(1, Math.ceil(context.sampleRate * .48), context.sampleRate);
       const samples = this.noise.getChannelData(0);
       for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-      this.music = context.createGain();
-      this.music.connect(this.bgm);
       this.setVolume(this.volume, this.muted);
       this.setMix(this.musicVolume,this.effectsVolume);
-      this.next = context.currentTime;
+      this.selectMusic(this.track,this.recording);
       this.timer = setInterval(() => this.schedule(), 40);
     }
     if (this.context.state !== 'running') this.context.resume().catch(() => {});
@@ -131,26 +135,168 @@ class GameAudio {
     this.sfx?.gain.setTargetAtTime(effects, now, .035);
   }
 
-  setTrack(track) {
-    if (this.track === track || !scores[track]) return;
+  setTrack(track, recording = recordingForScore(track)) {
+    if (!scores[track] || this.track === track && this.recording === recording) return;
     this.track = track;
-    this.step = 0;
-    if (!this.context) return;
+    this.recording = recording;
+    if (!this.previewId) this.selectMusic(track,recording);
+  }
+
+  async checkRecording(id, refresh = false) {
+    const status = this.recordingStatus.get(id);
+    if (!refresh && status && status !== 'unknown') return status;
+    if (this.recordingChecks.has(id)) return this.recordingChecks.get(id);
+    const request = new AbortController();
+    const timeout = setTimeout(() => request.abort(),8000);
+    const check = fetch(recordingURL(id),{method:'HEAD',cache:'no-cache',signal:request.signal})
+      .then(response => {
+        if (response.status === 404 || response.status === 410) return 'missing';
+        if (!response.ok) return 'unknown';
+        const mime = response.headers.get('content-type') || '';
+        return mime.startsWith('audio/') || mime.startsWith('application/octet-stream') ? 'registered' : 'missing';
+      }).catch(()=>'unknown').then(result=>{
+        clearTimeout(timeout);
+        this.recordingStatus.set(id,result);
+        this.recordingChecks.delete(id);
+        return result;
+      });
+    this.recordingChecks.set(id,check);
+    return check;
+  }
+
+  async decodeRecording(id, signal) {
+    try {
+      if (await this.checkRecording(id) !== 'registered' || signal.aborted) return null;
+      const response = await fetch(recordingURL(id),{cache:'no-cache',signal});
+      if (!response.ok) return null;
+      return await this.context.decodeAudioData(await response.arrayBuffer());
+    } catch (error) {
+      if (!signal.aborted && error.name === 'EncodingError') this.recordingStatus.set(id,'unreadable');
+      return null;
+    }
+  }
+
+  async selectMusic(track,id) {
+    if (!this.context) return false;
+    this.musicRequest?.abort();
+    this.musicRequest = null;
+    if (id && this.playingId === id) return true;
+    const status = this.recordingStatus.get(id);
+    if (!this.playingId || !id || status === 'missing' || status === 'unreadable') this.startScore(track);
+    if (!id || status === 'missing' || status === 'unreadable') return false;
+    const request = this.musicRequest = new AbortController();
+    const fallback = setTimeout(() => {
+      if (!request.signal.aborted) this.startScore(track);
+    },2000);
+    const buffer = await this.decodeRecording(id,request.signal);
+    clearTimeout(fallback);
+    if (request.signal.aborted) return false;
+    this.musicRequest = null;
+    if (!buffer) {
+      this.startScore(track);
+      return false;
+    }
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(this.musicBus(source));
+    this.playingId = id;
+    this.synthTrack = null;
+    source.start(now);
+    return true;
+  }
+
+  fadeGain(parameter, target, time, duration) {
+    if (parameter.cancelAndHoldAtTime) parameter.cancelAndHoldAtTime(time);
+    else {
+      const previous = parameter.value;
+      parameter.cancelScheduledValues(time);
+      parameter.setValueAtTime(previous,time);
+    }
+    parameter.linearRampToValueAtTime(target,time+duration);
+  }
+
+  musicBus(source = null) {
     const now = this.context.currentTime;
     const previous = this.music;
-    if (previous.gain.cancelAndHoldAtTime) previous.gain.cancelAndHoldAtTime(now);
-    else {
-      const level = previous.gain.value;
-      previous.gain.cancelScheduledValues(now);
-      previous.gain.setValueAtTime(level,now);
+    if (previous) {
+      this.fadeGain(previous.gain,0,now,.42);
+      this.recordingSource?.stop(now+.44);
+      setTimeout(()=>previous.disconnect(),650);
     }
-    previous.gain.setTargetAtTime(0, now, .13);
-    setTimeout(() => previous.disconnect(), 1000);
     this.music = this.context.createGain();
     this.music.gain.setValueAtTime(0, now);
     this.music.gain.linearRampToValueAtTime(1, now + .42);
-    this.music.connect(this.bgm);
-    this.next = now + .025;
+    this.music.connect(this.sceneMix);
+    this.recordingSource = source;
+    return this.music;
+  }
+
+  startScore(track) {
+    if (track === this.synthTrack) return;
+    this.musicBus();
+    this.playingId = null;
+    this.synthTrack = track;
+    this.step = 0;
+    this.next = this.context.currentTime + .025;
+  }
+
+  refreshRecording() {
+    if (!this.previewId && !this.musicRequest && this.recordingStatus.get(this.recording) === 'registered' &&
+        this.playingId !== this.recording) this.selectMusic(this.track,this.recording);
+  }
+
+  preview(id) {
+    this.previewId = id;
+    this.cueRequest?.abort();
+    this.endCue();
+    return this.selectMusic(bgmById.get(id).score,id);
+  }
+
+  stopPreview() {
+    if (!this.previewId) return;
+    this.previewId = null;
+    this.selectMusic(this.track,this.recording);
+  }
+
+  async cue(id, seconds = 7) {
+    if (!this.context || !id || this.previewId) return;
+    this.cueRequest?.abort();
+    const request = this.cueRequest = new AbortController();
+    const timeout = setTimeout(() => request.abort(),4500);
+    const buffer = await this.decodeRecording(id,request.signal);
+    clearTimeout(timeout);
+    if (!buffer || request.signal.aborted || this.previewId) return;
+    this.endCue();
+    const now = this.context.currentTime;
+    const length = Math.min(seconds,buffer.duration);
+    const source = this.context.createBufferSource();
+    source.buffer = buffer;
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0,now);
+    gain.gain.linearRampToValueAtTime(.91,now+Math.min(.22,length*.22));
+    gain.gain.setValueAtTime(.91,now+length*.75);
+    gain.gain.linearRampToValueAtTime(0,now+length);
+    source.connect(gain).connect(this.bgm);
+    source.onended = () => {
+      gain.disconnect();
+      if (this.cueSource === source) {
+        this.cueSource = null;
+        this.fadeGain(this.sceneMix.gain,1,this.context.currentTime,.35);
+      }
+    };
+    this.cueSource = source;
+    this.fadeGain(this.sceneMix.gain,.23,now,.22);
+    source.start(now);
+    source.stop(now+length);
+  }
+
+  endCue() {
+    if (!this.cueSource) return;
+    this.cueSource.stop(this.context.currentTime);
+    this.cueSource = null;
+    this.fadeGain(this.sceneMix.gain,1,this.context.currentTime,.26);
   }
 
   note(pitch, at, length, volume, voice, output, glide = 0) {
@@ -193,11 +339,11 @@ class GameAudio {
   }
 
   schedule() {
-    if (this.context.state !== 'running') return;
+    if (this.context.state !== 'running' || !this.synthTrack) return;
     const now = this.context.currentTime;
-    const [bpm, voice, roots, melody] = scores[this.track];
+    const track = this.synthTrack;
+    const [bpm, voice, roots, melody] = scores[track];
     const beat = 30 / bpm;
-    const track = this.track;
     const town = track.startsWith('town');
     const inn = track.startsWith('inn');
     const grand = ['title','boss','genesis'].includes(track) || track.startsWith('emperor');
@@ -245,6 +391,8 @@ class GameAudio {
 
   play(effect) {
     if (this.context?.state !== 'running' || !effects[effect]) return;
+    if (effect === 'summon' || effect === 'victory') this.cue(effect,effect === 'victory' ? 5 : 7);
+    if (/^awake[1-4]$/.test(effect)) this.cue('transform',4);
     effects[effect].forEach((pitch, i) =>
       this.note(pitch, this.context.currentTime + i * .078, effect === 'quake' ? .26 : .15, .14, effect === 'quake' ? 'cello' : 'strings', this.sfx));
   }

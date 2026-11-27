@@ -48,16 +48,18 @@ function updateSummon() {
   }
   if (clock < summon.next) return;
   summon.next = clock + 1.62;
+  const foe = nearestActionFoe(actorPoint('hero'));
+  if (!foe) return;
   const {spirit} = summon;
-  if (spirit.id === 'wolf' || spirit.id === 'kirin') battle.slowedUntil = clock+1.02;
+  if (spirit.id === 'wolf' || spirit.id === 'kirin') foe.slowedUntil = clock+1.02;
   if (spirit.id === 'giant') invulnerableUntil = Math.max(invulnerableUntil,clock+.35);
   const damage = spiritPower(spirit);
-  if (spirit.id === 'phoenix') battle.burn = {at:clock+.56,damage:Math.ceil(damage*.36)};
+  if (spirit.id === 'phoenix') foe.burn = {at:clock+.56,damage:Math.ceil(damage*.36)};
   if (spirit.id === 'serpent') player.mp = Math.min(maxMP(),player.mp+2);
   if (spirit.id === 'shade') player.hp = Math.min(maxHP(),player.hp + Math.ceil(maxHP()*.055));
   summon.flash = clock+.39;
   audio.play(spirit.id === 'giant' ? 'quake' : 'magic');
-  hurtActionEnemy(Math.min(damage,Math.ceil(battle.enemy.max*(battle.enemy.boss ? .14 : 1))),spirit.element);
+  hurtActionEnemy(foe,Math.min(damage,Math.ceil(foe.unit.max*(foe.unit.boss ? .14 : 1))),spirit.element);
 }
 
 function drawSummon(spirit,x,y,scale,flash = false) {

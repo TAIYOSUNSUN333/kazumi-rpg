@@ -1,12 +1,12 @@
 // Change the cache name whenever a published app shell changes.
 const cachePrefix = 'kazumi-rpg-';
-const cacheName = cachePrefix + 'action-5';
+const cacheName = cachePrefix + 'action-7';
 const shellFiles = [
   './', './index.html', './game.css', './manifest.webmanifest',
-  './prefectures.js', './world.js', './riddles.js', './stones.js', './audio.js',
+  './prefectures.js', './world.js', './riddles.js', './stones.js', './bgm.js', './audio.js',
   './companions.js', './towns.js', './tourism.js', './graphics.js', './battlefield.js',
   './bath.js', './inn.js', './terrain.js', './stages.js', './movement.js', './command-battle.js',
-  './action-battle.js', './summons.js', './market.js', './game.js', './action-render.js', './render.js',
+  './action-battle.js', './encounter-group.js', './summons.js', './market.js', './game.js', './action-render.js', './lodging-render.js', './render.js',
   './assets/portrait-0.webp', './assets/story-0.webp', './assets/land-0.webp',
   './assets/actors.webp', './assets/soso.webp', './assets/action-poses.webp',
   './assets/enemy-0.webp', './assets/enemy-1.webp', './assets/enemy-2.webp',
@@ -30,6 +30,7 @@ self.addEventListener('activate',event => {
 self.addEventListener('fetch',event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || !url.href.startsWith(scope) || url.pathname.endsWith('/service-worker.js')) return;
+  if (url.href.startsWith(scope + 'assets/bgm/')) return;
   const isShell = shellURLs.has(url.href);
   const isRoot = event.request.mode === 'navigate' && (url.pathname === new URL(scope).pathname ||
     shellURLs.has(url.origin + url.pathname));

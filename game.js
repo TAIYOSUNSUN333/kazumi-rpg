@@ -23,7 +23,7 @@ function readAdventure(key = saveKey) {
 }
 
 const player = {
-  x: 25, y: 104, hp: 100, mp: 30, xp: 0, gold: 0, shards: 0, herbs: 0,
+  x: 25, y: 104, hp: 100, mp: 30, fatigue:0, xp: 0, gold: 0, shards: 0, herbs: 0,
   weapon: 0, armor: 0, party: [], facing: {x: 1, y: 0}
 };
 let mode = 'title';
@@ -96,7 +96,7 @@ function save(explicit = false) {
   const previous = readAdventure();
   const snapshot = {
     version: 11, bathPending, pack, shieldOwned, shieldEquipped, stage:stageSnapshot(), stones:stoneSnapshot(), actionEquipment:{slashBase,armorBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
-    xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
+    xp: player.xp, fatigue:player.fatigue, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
     enemies: enemies.map(enemy => enemy.hp), shrineDefeated,
@@ -116,7 +116,8 @@ function load(data) {
   pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8, 9, 10, 11].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
-  player.xp = numeric(data.xp, 0, 0, 1000000);
+  player.xp = numeric(data.xp,0,0,1000000);
+  player.fatigue = numeric(data.fatigue,0,0,100);
   restoreCompanions(data);
   player.shards = numeric(modern ? data.shards : data.art, 0, 0, 100000);
   player.x = modern || oldMap ? numeric(data.x, 25, 0, limit) : 25;
@@ -373,6 +374,17 @@ function fieldTrack() {
   return ['forest','coast','snow'].includes(track) ? track : 'field';
 }
 
+const cityMusicRegions = new Set(['東京都','神奈川県','愛知県','京都府','大阪府','兵庫県','福岡県']);
+const merchantMusicSites = new Set(['weapon','armor','items','pharmacy','store','magic','smith','food','restaurant','tavern','casino']);
+function setFieldTrack() {
+  const score = fieldTrack();
+  if (interior?.site.kind === 'ruin') return audio.setTrack(score,'dungeon');
+  if (interior && merchantMusicSites.has(interior.site.kind)) return audio.setTrack(score,'tavern');
+  if (!interior && townNight()) return audio.setTrack(score,'night');
+  if (score.startsWith('town') && cityMusicRegions.has(prefectures[chapterOf(player.x)].name)) return audio.setTrack(score,'city');
+  audio.setTrack(score);
+}
+
 function panel(title, lines, buttons) {
   clearInput();
   paused = true;
@@ -410,6 +422,8 @@ function panel(title, lines, buttons) {
   $('panel-buttons').querySelector('button:not(:disabled)')?.focus({preventScroll: true});
 }
 function resume() {
+  audio.stopPreview();
+  facilityGathering = null;
   paused = false;
   menuActive = false;
   $('pause').setAttribute('aria-expanded','false');
@@ -424,7 +438,7 @@ function enterField() {
   otherTrails.clear();
   cat.x = player.x - 18;
   cat.y = player.y;
-  audio.setTrack(fieldTrack());
+  setFieldTrack();
   $('hud').hidden = $('pause').hidden = $('actions').hidden = false;
   resume();
 }
@@ -542,11 +556,12 @@ function openMenu() {
   if (innScene || bathScene || doorTransition || quizOpen || shrineDefeated) return;
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
+  audio.stopPreview();
   menuActive = true;
   $('pause').setAttribute('aria-expanded','true');
   const actions = [['閉じる',resume]];
   if (isActionBattle() && learnedSummons().length) actions.push(['召喚魔法',summonMenu]);
-  if (isActionBattle()) actions.push(['逃げる',tryEscapeBattle,isFinalBoss(battle.enemy) || clock < (battle.escapeAt || 0)]);
+  if (isActionBattle()) actions.push(['道具',actionItemMenu],['逃げる',tryEscapeBattle,isFinalBoss(battle.enemy) || clock < (battle.escapeAt || 0)]);
   if (!battle) actions.push(
     ['アイテム', itemMenu], ['魔法', magicMenu], ['装備', ownedEquipment], ['ステータス', statusMenu],
     ['マップ', travelBook], ['セーブ・ロード', saveMenu], ['酒場', () => tavern(true)],
@@ -568,7 +583,8 @@ $('pause').onclick = () => {
 };
 
 function settingsMenu() {
-  panel('設定',[],[['メニューに戻る',openMenu]]);
+  audio.stopPreview();
+  panel('設定',[],[['サウンドテスト',openSoundTest],['メニューに戻る',openMenu]]);
   settings();
 }
 
@@ -577,6 +593,7 @@ function statusMenu() {
   panel('ステータス',[
     '一美　Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP(),
     '攻撃 ' + attackPower() + '　防御 ' + defense() + '　経験値 ' + player.xp + '/' + nextXp(),
+    '疲労 ' + player.fatigue + '/100',
     '所持金 ' + player.gold + 'G　預金 ' + townBank + 'G',
     prefectures[chapterOf(player.x)].name + '　' + townTime(),
     member ? member.name + ' Lv.' + companionLevel(member) + '　HP ' + member.hp + '/' + companionHP(member) +
@@ -696,7 +713,7 @@ function openTrials() {
   panel('四天王の試練', ['本編とは独立した闘技場。勝つと限定装備と称号を獲得する。',
     '称号 ' + ([...clearedTrials].map(index => trials[index].title).join('、') || 'なし')
   ], [['メニューに戻る', openMenu], ...trials.map(trial => [trial.name, () => {
-    trialVitals = {hp: player.hp, mp: player.mp, herbs: player.herbs, remaining: Math.max(0, specialAt - clock)};
+    trialVitals = {hp: player.hp, mp: player.mp, herbs: player.herbs, pack:{...pack}, remaining: Math.max(0, specialAt - clock)};
     player.hp = maxHP();
     player.mp = maxMP();
     specialAt = clock;
@@ -709,6 +726,7 @@ function leaveTrial() {
   player.hp = trialVitals.hp;
   player.mp = trialVitals.mp;
   player.herbs = trialVitals.herbs;
+  restorePack(trialVitals.pack);
   specialAt = clock + trialVitals.remaining;
   trialVitals = null;
   battle = null;
@@ -739,11 +757,13 @@ function openShrine(shrine, chapter, optional) {
   if (shrine.solved) return;
   destination = null;
   quizOpen = true;
+  audio.setTrack(fieldTrack(),'riddle');
   const question = shrineQuestion(shrine, chapter);
   save();
   function close() {
     quizOpen = false;
     delete $('panel').dataset.quiz;
+    setFieldTrack();
     resume();
   }
 
@@ -817,7 +837,7 @@ function movePlayer(dx, dy, distance) {
   if (isActionBattle()) {
     player.facing = directionTo(dx,dy,player.facing);
     const underBoss = battle.body.size >= 4.5 && (pressed('crouch') || dashMotion);
-    moveArena('hero',dx,dy,distance,underBoss ? [] : [enemyBlocker()]);
+    moveArena('hero',dx,dy,distance,groupBlockers(null,underBoss));
     return;
   }
   const magnitude = Math.hypot(dx, dy);
@@ -951,7 +971,7 @@ function swing(charged = false) {
   const chapter = chapterOf(player.x);
   for (const enemy of activeEnemies(chapter)) {
     if (!enemy.hp || !enemyOnField(enemy) || isFinalBoss(enemy)) continue;
-    if (aligned(enemy.x, enemy.y, reach, form.width * .75)) hurtEnemy(enemy, power);
+    if (aligned(enemy.x, enemy.y, reach, form.width * .75)) hurtFieldEnemy(enemy,power);
     if (paused) break;
   }
   if (!paused) {
@@ -988,7 +1008,7 @@ function special() {
   say('ソソを思う！');
   for (const enemy of targets) {
     const power = attackPower() * 5 + 30 + Math.min(player.shards, 36);
-    hurtEnemy(enemy, enemy.boss ? Math.min(Math.ceil(enemy.max * .65), power) : enemy.hp);
+    hurtFieldEnemy(enemy,enemy.boss ? Math.min(Math.ceil(enemy.max*.65),power) : enemy.hp);
   }
   save();
 }
@@ -996,6 +1016,17 @@ function special() {
 function addNumber(text, x, y, color, field = false) {
   numbers.push({text: String(text), x, y, color, field, expires: clock + .7});
 }
+function hurtFieldEnemy(enemy, damage) {
+  const protectedEncounter = enemy.boss || ['elite','raid'].includes(encounterKind(enemy));
+  if (protectedEncounter) {
+    const floor = Math.min(enemy.hp,Math.ceil(enemy.max*.65));
+    const loss = Math.min(damage,enemy.hp-floor);
+    if (loss > 0) hurtEnemy(enemy,loss);
+    return;
+  }
+  hurtEnemy(enemy,damage);
+}
+
 function hurtEnemy(enemy, damage) {
   const boundary = isFinalBoss(enemy) ? Math.ceil(enemy.max * (3 - finalPhase(enemy)) / 3) : 0;
   enemy.hp = Math.max(boundary, enemy.hp - damage);
@@ -1029,13 +1060,13 @@ function hurtEnemy(enemy, damage) {
     return;
   }
   const oldLevel = level();
-  const reinforcementsDefeated = (battle?.command?.foes.length ?? 1) - 1;
+  const reinforcementsDefeated = battle?.group.members.filter(foe=>!foe.leader && !foe.summoned && foe.state === 'defeated').length ?? 0;
   const xp = (enemy.boss ? 44 : 7) + enemy.chapter * (enemy.boss ? 4 : 2) + reinforcementsDefeated * (4 + enemy.chapter);
   const gold = (enemy.boss ? 32 : 6) + enemy.chapter + reinforcementsDefeated * (3 + Math.floor(enemy.chapter / 2));
   player.xp += xp;
   awardCompanion(xp);
-  player.gold += gold;
-  player.herbs++;
+  player.gold = Math.min(bankLimit,player.gold+gold);
+  player.herbs = Math.min(10000,player.herbs+1);
   if (battle) {
     battle = null;
     flameBolts = [];
@@ -1046,7 +1077,7 @@ function hurtEnemy(enemy, damage) {
     fieldSafeUntil = clock + 1.2;
     swingUntil = clock;
     numbers.splice(0);
-    audio.setTrack(fieldTrack());
+    setFieldTrack();
   }
   player.hp = enemy.boss ? maxHP() : Math.min(maxHP(), player.hp + 5);
   player.mp = enemy.boss ? maxMP() : Math.min(maxMP(), player.mp + 4);
@@ -1095,6 +1126,7 @@ function defeat(title, detail = '呼びかけても返事はなく、足もと�
         save();
         return;
       }
+      rememberEncounterDamage();
       battle = null;
       shrineDefeated = false;
       interior = null;
@@ -1120,7 +1152,15 @@ function encounter(enemy, approach = 'normal') {
   clearInput(action);
   resetCat();
   resetJump();
-  battle = action ? createActionBattle(enemy,approach) : createBattle(enemy);
+  const group = createEnemyGroup(enemy);
+  if (!trialVitals) {
+    const cost = enemy.boss ? 10 : 5;
+    player.fatigue = Math.min(100,player.fatigue+cost);
+    for (const member of activeCompanions()) member.fatigue = Math.min(100,(member.fatigue || 0)+cost);
+  }
+  const leader = group.members[0].unit;
+  battle = action ? createActionBattle(leader,approach) : createBattle(leader);
+  battle.group = group;
   defeatedFoe = null;
   mode = 'battle';
   player.facing = {x: 1, y: 0};
@@ -1130,12 +1170,13 @@ function encounter(enemy, approach = 'normal') {
   audio.play('encounter');
   setEncounterTrack(enemy);
   say('');
-  if (action) startActionBattle(enemy,approach);
-  else startCommandBattle(enemy,approach);
+  if (action) startActionBattle(leader,approach);
+  else startCommandBattle(leader,approach);
 }
 
 function setEncounterTrack(enemy) {
-  audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
+  if (isFinalBoss(enemy)) audio.setTrack('boss','finalboss');
+  else audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
     enemy.rank === 'mid' ? 'midboss' : enemy.boss ? 'boss' : 'battle');
 }
 
@@ -1157,7 +1198,7 @@ function tryEscapeBattle() {
     updateCommandUI();
   } else {
     battle.escapeAt = clock + 2.7;
-    battle.next = clock;
+    for (const foe of livingEnemies(battle.group)) foe.nextAt = Math.min(foe.nextAt,clock+.24+foe.index*.22);
     say('逃走に失敗した！　戦闘を続けよう。',3);
   }
 }
@@ -1170,6 +1211,7 @@ function escapeBattle() {
     return;
   }
   if (!battle) return;
+  rememberEncounterDamage();
   ({x:player.x, y:player.y} = battle.entry);
   battle = null;
   clearInput();
@@ -1223,7 +1265,7 @@ function updateField(dt) {
     }
     say(returning ? 'ソソと並んで、家を目指す。' : chapters[chapter][0], 6);
   }
-  audio.setTrack(fieldTrack());
+  setFieldTrack();
   if (returning && !done && closeTo(25, 104, 14)) return arriveHome();
   const nearbyNpc = npcs.find(npc => !player.party.includes(npc.name) && closeTo(npc.x, 104, 13));
   if (nearbyNpc !== contactNpc) {

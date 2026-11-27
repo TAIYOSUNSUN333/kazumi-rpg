@@ -158,6 +158,27 @@ function endCharge() {
   swing(clock - started >= .58);
 }
 
+function followGuide(dt) {
+  const route = destination;
+  const target = route.detour?.[0] || route;
+  const distance = Math.hypot(target.x - player.x,target.y - player.y);
+  if (distance < 3.6) {
+    if (route.detour?.length) route.detour.shift();
+    else destination = null;
+    return;
+  }
+  gait = 'walk';
+  const {x,y} = player;
+  movePlayer(target.x-x,target.y-y,Math.min(distance,dt * (returning ? 390 : 83)));
+  if (Math.hypot(player.x-x,player.y-y) >= Math.min(.25,dt*30) || interior) return;
+  const throughX = x + clamp(route.x-x,-58,58);
+  const lanes = [104,86,122,145,65,162].sort((a,b) => Math.abs(y-a)-Math.abs(y-b));
+  const lane = lanes.find(row => Math.abs(row-y)>5 && fieldStepClear(x,y,x,row) &&
+    fieldStepClear(x,row,throughX,row));
+  if (lane !== undefined && Math.abs(throughX-x)>6) route.detour = [{x,y:lane},{x:throughX,y:lane}];
+  else if (!jumps && !route.detour?.length) jump();
+}
+
 function moveWithInput(dt) {
   const {x,y,magnitude,running} = playableInput();
   const ladder = nearbyLadder();
@@ -208,22 +229,15 @@ function moveWithInput(dt) {
     const trap = stagePaths[chapterOf(player.x)].trap;
     const onTrap = !interior && !battle && jumpHeight < 7 && atFootprint(player.x,player.y,trap);
     const terrainPace = onTrap && trap.kind === 'quicksand' ? .44 : onTrap && trap.kind === 'ice' ? 1.23 : 1;
-    const modifier = terrainPace * (clock < footingUntil ? .82 : 1) * (pressed('guard') ? .72 : 1) * (pressed('crouch') ? .51 : 1);
+    const fatigue = 1 - player.fatigue*.0009;
+    const modifier = fatigue * terrainPace * (clock < footingUntil ? .82 : 1) * (pressed('guard') ? .72 : 1) * (pressed('crouch') ? .51 : 1);
     gait = pressed('crouch') ? 'crouch' : runBlend > .4 ? 'run' : 'walk';
     movePlayer(x,y,dt * pace * modifier);
   } else {
     runBlend = 0;
     gait = pressed('crouch') ? 'crouch' : 'idle';
     if (wallKickUntil <= clock && wallGraceUntil <= clock) wallContact = null;
-    if (!battle && destination) {
-      const dx = destination.x - player.x, dy = destination.y - player.y;
-      const distance = Math.hypot(dx,dy);
-      if (distance < 3.6) destination = null;
-      else {
-        gait = 'walk';
-        movePlayer(dx,dy,Math.min(distance,dt * (returning ? 390 : 83)));
-      }
-    }
+    if (!battle && destination) followGuide(dt);
   }
   return false;
 }
@@ -318,12 +332,12 @@ function useShot() {
   } else special();
 }
 
-function launchFireball(damage, tint) {
+function launchFireball(damage, tint, element) {
   const arena = isActionBattle() ? battle : null;
   const origin = arena ? actorPoint('hero') : player;
   const direction = {...player.facing};
   flameBolts.push({x:origin.x + direction.x * 9,y:origin.y + direction.y * 9,direction,damage,
-    height:Math.max(0,jumpHeight), tint, arena, distance:0, chapter:chapterOf(player.x)});
+    height:Math.max(0,jumpHeight), tint, element, arena, distance:0, chapter:chapterOf(player.x)});
 }
 
 function updateFireballs(dt) {
@@ -338,16 +352,20 @@ function updateFireballs(dt) {
       return Math.hypot(tx - x - dx * progress,ty - y - dy * progress) <= radius;
     };
     if (bolt.arena) {
-      if (hits(battle.enemyX,battle.enemyY,battle.body.radius + 8)) {
-        battle.heroPressure = clock + 1.35;
-        positionalHit({x:x - dx * 14,y:y - dy * 14},bolt.damage,'magic');
+      const target = livingEnemies(battle.group).filter(foe=>{
+        const point = actorPoint(foe.key);
+        return hits(point.x,point.y,foe.body.radius+8);
+      }).sort((a,b)=>arenaDistance({x,y},actorPoint(a.key))-arenaDistance({x,y},actorPoint(b.key)))[0];
+      if (target) {
+        battle.heroPressure = clock+1.35;
+        positionalHit({x:x-dx*14,y:y-dy*14},bolt.damage,'magic',target,bolt.element);
         return false;
       }
     } else {
       const enemy = activeEnemies(bolt.chapter).find(foe =>
         foe.hp && enemyOnField(foe) && !isFinalBoss(foe) && hits(foe.x,foe.y,13));
       if (enemy) {
-        hurtEnemy(enemy,bolt.damage);
+        hurtFieldEnemy(enemy,bolt.damage);
         return false;
       }
       const pot = pots.slice(bolt.chapter * 3,bolt.chapter * 3 + 3).find(box => !box.broken && hits(box.x,box.y,10));

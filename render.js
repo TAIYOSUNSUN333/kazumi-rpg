@@ -560,6 +560,12 @@ function drawInterior() {
     label(keeper, 320, 80, '#ffe0a7', 12);
   }
   if (joined) drawCat(clamp(x - 22, 47, 593), y + 3, .8);
+  if (facilityGathering?.site === site) {
+    const gathering = facilityGathering;
+    const t = (performance.now()-gathering.start)/1000;
+    gatherAtTable(gathering.guests,t,320,204,Math.min(393,122+gathering.guests.length*34));
+    return;
+  }
   for (const [index,member] of activeCompanions().entries()) {
     drawPartyMember(member,clamp(x-30-index*15,47,593),y+8+(index%2)*10,.9,player.facing.x,gait === 'idle' ? 0 : 1);
   }
@@ -842,7 +848,10 @@ function drawField(chapter, camera) {
   for (const enemy of activeEnemies(chapter)) {
     if (!enemy.hp || !enemyOnField(enemy)) continue;
     const x = enemy.x - camera, y = fieldY(enemy.x,enemy.y);
-    monster(enemy, x, y, Math.min(1.38, combatBody(enemy).size * .73));
+    monster(enemy,x,y,Math.min(1.38,combatBody(enemy).size*.73));
+    if (!enemy.boss && enemy.slot === 4 && Math.abs(player.x-enemy.x) < 110) {
+      label(encounterKind(enemy) === 'raid' ? '集団襲撃' : '強敵',x,y-40,'#ffc18e',10);
+    }
     rect(x - 12, y - 31, 24, 3, '#35203a');
     rect(x - 12, y - 31, 24 * enemy.hp / enemy.max, 3, '#ff8d8d');
   }
@@ -1013,7 +1022,9 @@ function drawCommandEffect(action, positions) {
 function drawBattle() {
   const {command:turn, arena, enemy} = battle;
   drawArenaBackdrop(arena,enemy.chapter);
-  const group = [...turn.foes, ...turn.allies];
+  const visibleFoes = turn.foes.filter(actor=>commandAlive(actor) ||
+    actor.enemySlot.state === 'defeated' && clock-actor.enemySlot.fallenAt < .4);
+  const group = [...visibleFoes,...turn.allies];
   const positions = new Map(group.map(actor => [actor,commandPose(actor,turn)]));
   ctx.save();
   combatCamera(ctx);
@@ -1027,13 +1038,19 @@ function drawBattle() {
     const {x,y,face,pose,jump} = positions.get(actor);
     const stats = actor.stats();
     if (actor.enemy) {
-      const size = combatBody(actor.enemy).size * scale;
+      const size = groupCombatBody(actor.enemySlot).size*scale*(actor.enemySlot.leader ? 1 : .83);
       monster(actor.enemy,x,y-jump,size,{face,pose});
       if (stats.unit.hp) {
         const labelY = Math.max(49,y - size * 42 - 9);
-        label(actor.name,x,labelY,'#fff0cc',12);
-        rect(x-38,labelY+5,76,4,'#221b35cc');
-        rect(x-38,labelY+5,76*stats.unit.hp/stats.max,4,'#f19186');
+        const {leader,profile} = actor.enemySlot;
+        const bar = leader ? 70 : 24;
+        const phases = foePhaseCount(stats.unit);
+        const name = phases > 1 ? actor.name+'・第'+foePhase(stats.unit)+'形態'+(actor.enemySlot.ward ? '　結界 '+actor.enemySlot.ward : '') :
+          leader ? actor.name : actor.enemySlot.summoned ? '影狼' : profile.name;
+        label(name,x,labelY,profile.color,leader ? 12 : 8);
+        rect(x-bar/2,labelY+5,bar,3,'#221b35cc');
+        rect(x-bar/2,labelY+5,bar*stats.unit.hp/stats.max,3,'#f19186');
+        for (let mark=1; mark<phases; mark++) rect(x-bar/2+bar*mark/phases,labelY+5,1,3,'#221b35');
         if (actor.status) label(commandStatusNames[actor.status.type],x,labelY+20,'#d4ecff',10);
       }
     } else if (actor.id === 'cat') {
@@ -1206,116 +1223,3 @@ function frame(timestamp) {
 }
 requestAnimationFrame(frame);
 document.addEventListener('visibilitychange',() => { previousFrame = null; });
-
-function seatedAtInn(name, x, y, facing) {
-  const actor = picture('actors');
-  if (!actor) return;
-  ctx.save();
-  ctx.translate(x,y);
-  ctx.scale(facing,1);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(actor,0,actorRow(name)*64,64,44,-30,-42,60,42);
-  polygon([[-9,-2],[1,-3],[9,3],[7,14],[2,14],[3,6],[-7,6]],'#574358');
-  polygon([[2,12],[8,12],[12,16],[2,16]],'#4a3641');
-  ctx.restore();
-}
-
-function drawInnStay() {
-  const scene = innScene;
-  const t = scene.time;
-  const reception = scene.stage <= 1;
-  const sleep = scene.stage === 4;
-  const dawn = scene.stage >= 5;
-  const night = sleep || scene.stage === 3;
-  const image = picture('inn-' + (reception ? 2 : scene.profile.art));
-  rect(0,0,640,360,'#46323a');
-  if (image) coverArt(ctx,image,0,0,640,360);
-  const glow = ctx.createLinearGradient(0,140,0,345);
-  glow.addColorStop(0,'#56424900');
-  glow.addColorStop(1,'#34272add');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0,140,640,205);
-  const sun = dawn ? clamp((t - 14.3) / 3,0,1) : 0;
-  rect(431,55,95,86,'#241d2a');
-  rect(438,61,81,72,night ? '#26304c' : dawn ? '#bc977e' : '#827c93');
-  polygon([[438,124],[455,100],[477,114],[502,92],[518,109],[518,132],[438,132]],'#4c5263');
-  if (night) {
-    ctx.fillStyle='#ddd8b8';ctx.beginPath();ctx.arc(493,81,11,0,6.283);ctx.fill();
-  } else if (dawn) {
-    ctx.fillStyle='#ffdd9a';ctx.beginPath();ctx.arc(495,125-sun*38,13,0,6.283);ctx.fill();
-    lightAt(ctx,474,123,105,'#ffc17b83');
-  }
-  rect(476,61,4,72,'#75594f');
-  rect(438,96,81,3,'#75594f');
-  if (reception) {
-    groundShadow(234,224,68,9);
-    rect(174,174,117,53,'#70514a');
-    rect(170,170,125,10,'#b18c6a');
-    for (let i=0;i<5;i++) rect(178+i*23,183,1,40,'#4e3740');
-    drawCompanion('恵美ちゃん',229,172,.92,1);
-    if (scene.stage === 0) {
-      diamond(275,177 + Math.sin(t*8)*2,4,6,'#ffcf7c');
-      rect(277,175,6,1,'#e8ba81');
-    }
-  } else {
-    const heat = sleep ? 0 : 1;
-    rect(114,119,85,75,'#6b5755');
-    rect(124,135,65,55,'#2a2330');
-    if (heat) {
-      const fire = reducedMotion.matches ? 0 : Math.sin(t*14)*4;
-      polygon([[136,183],[140,166],[150,169],[155+fire,147],[165,172],[174,166],[182,183]],'#e88955');
-      polygon([[145,184],[151,171],[160+fire,164],[170,184]],'#f8c475');
-      lightAt(ctx,156,168,88,'#ffa05787');
-    }
-    for (const x of [310,460]) {
-      groundShadow(x,231,57,9);
-      rect(x-51,176,102,54,'#493441');
-      rect(x-48,178,96,42,'#8c665b');
-      rect(x-42,184,27,27,'#eee1bb');
-      rect(x-11,180,58,36,scene.profile.art === 1 ? '#648b84' : '#9c5b6e');
-      rect(x+40,184,4,30,'#c19883');
-      rect(x-47,220,91,3,'#6d4e52');
-    }
-    if (scene.stage >= 2 && scene.stage <= 5) {
-      rect(241,199,78,26,'#79594c');
-      rect(235,195,86,5,'#ac8163');
-      polygon([[245,199],[268,184],[272,186],[252,203]],'#ced6d3');
-      rect(277,198,21,9,'#984f68');
-    }
-  }
-  const ally = currentCompanion();
-  if (scene.stage <= 1) {
-    const travel = clamp((t - 1.6) / 1.9,0,1);
-    drawActor('一美',263 + travel*139,237 - travel*19,1.12,1,scene.stage ? 1 + Math.floor(t*9)%2 : 6);
-    if (ally) drawActor(ally.name,224 + travel*136,246 - travel*21,1.06,1,scene.stage ? 1 + Math.floor(t*9)%2 : 0);
-    if (joined) drawCat(208 + travel*130,248 - travel*18,.8);
-  } else {
-    const tired = scene.stage === 4 || scene.stage === 5;
-    const rising = scene.stage === 6;
-    const rise = clamp((t-17.3)/1.6,0,1);
-    const pose = tired ? 8 : rising ? 1 + Math.floor(t*7)%2 : scene.stage === 3 ? 6 : 0;
-    const y = tired ? 214 : rising ? 216 + rise*27 : 228;
-    if (scene.stage === 2 || scene.stage === 3) {
-      seatedAtInn('一美',335,210,1);
-      if (ally) seatedAtInn(ally.name,472,210,-1);
-    } else {
-      drawActor('一美',335,y,1.13,1,pose);
-      if (ally) drawPartyMember(ally,scene.choice?.[3] === 'share' && tired ? 362 : 472,y,1.02,-1,pose);
-    }
-    if (tired) {
-      rect(322,195,30,14,'#a76578');
-      if (ally && scene.choice?.[3] !== 'share') rect(459,195,30,14,'#a76578');
-    }
-    if (joined) {
-      const catTime = sleep ? 0 : Math.floor(t*5)%3;
-      const sheet = picture('soso');
-      if (sheet) ctx.drawImage(sheet,catTime*64,0,64,64,345, sleep ? 191 : 207,42, sleep ? 32 : 40);
-    }
-  }
-  if (night) {
-    ctx.fillStyle = sleep ? '#111733' : '#29243d';
-    ctx.globalAlpha = sleep ? .32 + clamp((t - 10) / 1.6,0,1) * .47 : .24;
-    ctx.fillRect(0,0,640,360);
-    ctx.globalAlpha = 1;
-  } else if (dawn) lightAt(ctx,451,103,220,'#f6c47971');
-}

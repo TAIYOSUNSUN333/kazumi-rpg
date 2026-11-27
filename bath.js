@@ -51,14 +51,16 @@ function finishBath() {
   player.hp = Math.min(maxHP(),player.hp+Math.ceil(maxHP()*.46));
   player.mp = Math.min(maxMP(),player.mp+Math.ceil(maxMP()*.34));
   footingUntil = clock;
+  player.fatigue = Math.max(0,player.fatigue-42);
   for (const member of activeCompanions()) {
     member.hp = Math.min(companionHP(member),member.hp+Math.ceil(companionHP(member)*.4));
     member.mp = Math.min(companionMP(member),member.mp+8);
+    member.fatigue = Math.max(0,(member.fatigue || 0)-42);
   }
   rememberRegionalBath(chapter);
   bathPending = bathScene = null;
   $('stay-controls').hidden = true;
-  audio.setTrack(fieldTrack());
+  setFieldTrack();
   resume();
   say('温泉で体力と魔力が回復した。');
   save();

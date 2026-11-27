@@ -12,10 +12,13 @@ const localJobs = {
   river:['渡し守','流れ弾き', 'magic']
 };
 for (const [index, region] of prefectures.entries()) {
-  const [job, skill, role] = localJobs[region.terrain];
+  const [job,skill,role] = localJobs[region.terrain];
+  const tier = Math.floor(index/9);
+  const growth = 1+tier*.065;
   companionProfiles[region.companion] = {
-    job, skill, role, hp:76 + index % 5 * 6, mp:23 + index % 7 * 4, power:12 + index % 6 * 2,
-    defense:4 + index % 4, speed:88 + index % 5 * 6, reach:65 + index % 6 * 6,
+    job,skill,role,growth,hp:76+index%5*6+tier*9,mp:23+index%7*4+tier*3,power:12+index%6*2+tier*3,
+    recruitCue:index >= 45 ? 'mythic' : index >= 36 ? 'legend' : null,
+    defense:4+index%4+tier*2,speed:88+index%5*6+tier*3, reach:65 + index % 6 * 6,
     color:region.color, hair:['#49352f','#383242','#704b3f'][index % 3],
     skin:['#f2d2b3','#d49c77','#e7ba95'][index % 3], width:8 + index % 4
   };
@@ -26,8 +29,19 @@ const companionTrail = {x: 0, y: 104};
 let contactNpc = null;
 const currentCompanion = () => companions.get(player.party[0]);
 const companionLevel = member => Math.min(99, 1 + Math.floor(Math.sqrt(member.xp / 30)));
-const companionHP = member => companionProfiles[member.name].hp + (companionLevel(member) - 1) * 9;
-const companionMP = member => companionProfiles[member.name].mp + (companionLevel(member) - 1) * 3;
+const companionGrowth = member => companionProfiles[member.name].growth || 1;
+const companionHP = member => companionProfiles[member.name].hp+Math.round((companionLevel(member)-1)*9*companionGrowth(member));
+const companionMP = member => companionProfiles[member.name].mp+Math.round((companionLevel(member)-1)*3*companionGrowth(member));
+const companionPower = member => companionProfiles[member.name].power+
+  Math.round((companionLevel(member)-1)*3*companionGrowth(member))+member.gear*3;
+
+function initialCompanion(name) {
+  const levelAtJoining = name === 'クルミ' ? 1 : Math.min(99,level());
+  const member = {name,xp:30*(levelAtJoining-1)**2,gear:0,affinity:0,trust:0,fatigue:0,tactic:'攻撃優先',history:[]};
+  member.hp = companionHP(member);
+  member.mp = companionMP(member);
+  return member;
+}
 
 const activeCompanions = () => player.party.map(name => companions.get(name)).filter(Boolean);
 const humans = () => activeCompanions().filter(member => member.name !== 'クルミ' && !member.monster);
@@ -44,6 +58,22 @@ function companionProfile(name) {
     ['一郎','タク'].includes(name) ? 'male' : name === '恵美ちゃん' ? 'female' :
     Object.keys(companionProfiles).indexOf(name)%2 ? 'male' : 'female';
   return {gender,personality:entry[0],weapon:entry[1],element:entry[2],fit:entry[3],...profile};
+}
+
+const companionLimits = {
+  一郎:{name:'天空連斬',cost:7,reach:62,power:2.35,color:'#f7be84'},
+  恵美ちゃん:{name:'生命の奇跡',cost:12,reach:92,power:.35,color:'#9ce7bb',heal:true},
+  タク:{name:'星降る裁き',cost:10,reach:119,power:2.1,color:'#c5b7ff'},
+  クルミ:{name:'月光の翼',cost:8,reach:105,power:1.87,color:'#a8e2fa'}
+};
+
+function companionLimit(member) {
+  if (companionLimits[member.name]) return companionLimits[member.name];
+  if (member.monster || companionLevel(member) < 20) return null;
+  const profile = companionProfiles[member.name];
+  const heal = profile.role === 'heal';
+  return {name:profile.skill+'・奥義',cost:heal ? 10 : 8,reach:profile.reach+19,
+    power:heal ? .30 : 1.85,color:profile.color,heal};
 }
 
 function monsterCompanion(origin) {
@@ -69,6 +99,7 @@ function restoreCompanions(data) {
     const old = records.find(entry => entry?.name === name);
     if (!old && !(Array.isArray(data.party) && data.party.includes(name))) continue;
     const member = {name, xp:numeric(old?.xp, 0, 0, 300000), gear:numeric(old?.gear, 0, 0, 3),
+      fatigue:numeric(old?.fatigue,0,0,100),
       affinity:numeric(old?.affinity, 0, -100, 100), trust:numeric(old?.trust,0,-100,100),
       tactic:['攻撃優先','支援優先','守備優先'].includes(old?.tactic) ? old.tactic : '攻撃優先',
       history:Array.isArray(old?.history) ? old.history.filter(value => typeof value === 'string').slice(-50) : []};
@@ -99,11 +130,15 @@ function remember(member, event) {
 function recruitment(npc, back = resume) {
   const profile = companionProfile(npc.name);
   const record = companions.get(npc.name);
+  const candidate = record || initialCompanion(npc.name);
   const hasRoom = () => npc.name === 'クルミ' ? !player.party.includes(npc.name) : humans().length < 2;
-  const lines = [npc.line, profile.job + '　' + profile.personality + '　Lv.' + (record ? companionLevel(record) : 1),
+  const lines = [npc.line, profile.job + '　' + profile.personality + '　Lv.' + companionLevel(candidate),
     '得意武器 ' + profile.weapon + '　属性 ' + profile.element + '　相性 ' + profile.fit,
-    'HP ' + (record ? companionHP(record) : profile.hp) + '　MP ' + (record ? companionMP(record) : profile.mp),
-    '得意技 ' + profile.skill];
+    'HP ' + companionHP(candidate) + '　MP ' + companionMP(candidate),
+    '得意技 ' + profile.skill + '　攻撃 ' + companionPower(candidate)];
+  const signature = companionLimit(candidate);
+  if (signature) lines.push('習得済みの必殺技 ' + signature.name);
+  if (profile.recruitCue) lines.push(profile.recruitCue === 'mythic' ? '神話級' : '伝説級');
   if (!hasRoom()) {
     panel(npc.name,[...lines,'酒場で人間の同行枠を空けると、誘うことができます。'],[['戻る',back]]);
     return;
@@ -127,12 +162,13 @@ function recruitment(npc, back = resume) {
   panel(npc.name + 'を仲間にしますか？',lines,[
     ['はい',() => {
       if (!hasRoom() || player.party.includes(npc.name)) return back();
-      const member = record || {name:npc.name,xp:0,hp:profile.hp,mp:profile.mp,gear:0,affinity:0,trust:0,tactic:'攻撃優先',history:[]};
+      const member = candidate;
       companions.set(npc.name,member);
       player.party.push(npc.name);
       remember(member,'加入');
       save();
       back();
+      if (!record) audio.cue(profile.recruitCue);
     }],['いいえ',back]
   ]);
 }
@@ -196,6 +232,7 @@ function companionOptions(member,back,remote) {
       remember(member,'酒場で離脱');
       save();
       back();
+      audio.cue('farewell');
     }],['いいえ',back]])]);
     if (member.monster) actions.push(['契約を解く',() => panel(name + 'との契約を解きますか？',[
       '契約石を再び使えるようになります。'
@@ -249,20 +286,38 @@ function contractStones() {
   return [2,5,8].filter(chapter => towns[chapter].sites.at(-1).seal.solved).length;
 }
 
-function canCapture() {
-  return battle && !battle.enemy.boss && battle.enemy.hp > 0 && battle.enemy.hp <= battle.enemy.max * .42 &&
-    (!battle.command || battle.command.phase === 'select' && battle.command.foes.filter(commandAlive).length === 1) &&
-    capturedCompanions().length < contractStones() && clock >= (battle.captureAt || 0);
+const captureOrigin = foe => foe.unit.chapter*8+foe.unit.slot;
+
+function captureCandidates() {
+  if (!battle?.group || battle.group.source.boss || battle.command && battle.command.phase !== 'select' ||
+      capturedCompanions().length >= contractStones() || clock < (battle.captureAt || 0)) return [];
+  const seen = new Set();
+  return livingEnemies(battle.group).filter(foe=>{
+    const name = '魂-'+captureOrigin(foe);
+    if (foe.summoned || foe.unit.hp > foe.unit.max*.42 || companions.has(name) || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
 }
 
+const canCapture = () => captureCandidates().length > 0;
+
 function offerCapture() {
-  if (!canCapture()) return;
-  const foe = battle.enemy;
-  const probability = Math.round(clamp(.34 + (.42 - foe.hp / foe.max)*1.24 - foe.variant*.045,.18,.88)*100);
-  panel(foe.name + 'と契約しますか？',[
-    '成功率 ' + probability + '%　魂の契約石 ' + (contractStones()-capturedCompanions().length) + '個が使用可能。'
-  ],[['契約する',() => {
-    if (!canCapture()) return openMenu();
+  const candidates = captureCandidates();
+  if (!candidates.length) return;
+  if (candidates.length === 1) return confirmCapture(candidates[0]);
+  panel('契約する相手を選ぶ',[],[
+    ...candidates.map(foe=>[foe.unit.name+'・'+foe.profile.name,()=>confirmCapture(foe)]),['戻る',openMenu]
+  ]);
+}
+
+function confirmCapture(slot) {
+  const foe = slot.unit;
+  const probability = Math.round(clamp(.34+(.42-foe.hp/foe.max)*1.24-foe.variant*.045,.18,.88)*100);
+  panel(foe.name+'と契約しますか？',[
+    '成功率 '+probability+'%　魂の契約石 '+(contractStones()-capturedCompanions().length)+'個が使用可能。'
+  ],[['契約する',()=>{
+    if (!captureCandidates().includes(slot)) return openMenu();
     if (Math.random()*100 >= probability) {
       if (battle.command) {
         battle.command.plan = [];
@@ -270,22 +325,27 @@ function offerCapture() {
         startCommandRound();
       } else {
         battle.captureAt = clock+5;
-        battle.next = clock;
+        slot.nextAt = clock;
       }
       resume();
       say('契約に失敗した。',2);
       return;
     }
-    const origin = foe.chapter*8 + foe.slot;
+    const origin = captureOrigin(slot);
     const name = monsterCompanion(origin);
     if (!name || companions.has(name)) return openMenu();
     const profile = companionProfiles[name];
     companions.set(name,{name,monster:true,origin,hp:profile.hp,mp:profile.mp,xp:0,gear:0,
-      affinity:0,trust:0,tactic:'攻撃優先',history:[]});
+      affinity:0,trust:0,fatigue:0,tactic:'攻撃優先',history:[]});
     player.party.push(name);
     monsterDex.add(foe.name);
+    slot.state = 'captured';
+    slot.strike = null;
     foe.hp = 0;
-    escapeBattle();
-    say(foe.name + 'と契約した。');
+    resume();
+    if (battle.command) {
+      if (!checkCommandOutcome(battle.command)) updateCommandUI();
+    }
+    say(foe.name+'と契約した。残りの敵との戦闘を続ける。');
   }],['戻る',openMenu]]);
 }
