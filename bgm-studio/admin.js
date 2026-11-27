@@ -1,6 +1,25 @@
 const $ = id => document.getElementById(id);
 const api = '/.netlify/functions/bgm-admin';
-const maxSize = 4 * 1024 * 1024;
+const binaryLimit = 4 * 1024 * 1024;
+const maxSize = 4.5 * 1024 * 1024;
+const z85Alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#';
+
+// A text request avoids the platform's Base64 expansion for larger uploads.
+async function encodeLargeUpload(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const padding = (4 - bytes.length % 4) % 4;
+  const output = new Uint8Array(1 + (bytes.length + padding) / 4 * 5);
+  output[0] = 48 + padding;
+  for (let offset = 0, target = 1; offset < bytes.length; offset += 4, target += 5) {
+    let value = bytes[offset] * 0x1000000 + (bytes[offset + 1] || 0) * 0x10000 +
+      (bytes[offset + 2] || 0) * 0x100 + (bytes[offset + 3] || 0);
+    for (let digit = 4; digit >= 0; digit--) {
+      output[target + digit] = z85Alphabet.charCodeAt(value % 85);
+      value = Math.floor(value / 85);
+    }
+  }
+  return new TextDecoder().decode(output);
+}
 let generation = 0;
 let busy = false;
 const songs = ['星を継ぐ旅','風の街道','小さな灯の町','木漏れ日の森','深き岩の記憶',
@@ -17,7 +36,7 @@ function request(method, track, body, progress) {
     xhr.timeout = 30000;
     if (track) xhr.setRequestHeader('X-BGM-Sha',track.sha || 'new');
     if (body) {
-      xhr.setRequestHeader('Content-Type','application/octet-stream');
+      xhr.setRequestHeader('Content-Type',typeof body === 'string' ? 'text/plain' : 'application/octet-stream');
       xhr.upload.onprogress = event => { if (event.lengthComputable) progress(100*event.loaded/event.total); };
     }
     xhr.onload = () => {
@@ -125,7 +144,8 @@ function trackCard(track, index) {
     progress.value = 0;
     status.textContent = method === 'PUT' ? 'アップロード中…' : '削除中…';
     try {
-      const saved = await request(method,track,file,value=>{
+      const body = file?.size > binaryLimit ? await encodeLargeUpload(file) : file;
+      const saved = await request(method,track,body,value=>{
         progress.value = value;
         if (value === 100) status.textContent = 'GitHubへ保存中…';
       });
@@ -145,7 +165,7 @@ function trackCard(track, index) {
     input.value = '';
     if (!file) return;
     if (!/\.mp3$/i.test(file.name) || !file.size || file.size > maxSize) {
-      status.textContent = '4 MiB以下のMP3を選択してください。';
+      status.textContent = '4.5 MiB以下のMP3を選択してください。';
       return;
     }
     save('PUT',file);

@@ -2,13 +2,39 @@ const { authenticate, sessionValid, origin } = require('../bgm-auth.js');
 const { bgmCatalog } = require('../../bgm.js');
 const QRCode = require('qrcode');
 
-const limit = 4 * 1024 * 1024;
+const binaryLimit = 4 * 1024 * 1024;
+const limit = 4.5 * 1024 * 1024;
+const sizeError = {error:'4.5 MiB以下のMP3を選択してください。'};
+const z85Alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#';
+const z85Digits = new Int16Array(128).fill(-1);
+for (let index = 0; index < z85Alphabet.length; index++) {
+  z85Digits[z85Alphabet.charCodeAt(index)] = index;
+}
 const folder = 'assets/bgm';
 const endpoint = 'https://api.github.com/repos/TAIYOSUNSUN333/kazumi-rpg/contents/';
 const headers = { 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff' };
 const result = (statusCode, data) => ({
   statusCode, headers:{...headers,'Content-Type':'application/json'}, body:JSON.stringify(data)
 });
+
+function decodeLargeUpload(body) {
+  const padding = body.charCodeAt(0) - 48;
+  const encodedLength = body.length - 1;
+  const size = encodedLength / 5 * 4 - padding;
+  if (padding < 0 || padding > 3 || encodedLength % 5 || size <= binaryLimit || size > limit) return null;
+  const bytes = Buffer.alloc(size + padding);
+  for (let offset = 1, target = 0; offset < body.length; offset += 5, target += 4) {
+    let value = 0;
+    for (let digit = 0; digit < 5; digit++) {
+      const index = z85Digits[body.charCodeAt(offset + digit)];
+      if (!(index >= 0)) return null;
+      value = value * 85 + index;
+    }
+    if (value > 0xffffffff) return null;
+    bytes.writeUInt32BE(value,target);
+  }
+  return bytes.subarray(0,size);
+}
 
 function isMP3(bytes) {
   let offset = 0;
@@ -80,11 +106,16 @@ exports.handler = async event => {
     const payload = {message:(method === 'DELETE' ? 'Remove ' : 'Update ')+track.file,branch:'main'};
     if (sha !== 'new') payload.sha = sha;
     if (method === 'PUT') {
-      if (!event.isBase64Encoded || !event.body || event.body.length > Math.ceil(limit/3)*4) {
-        return result(413,{error:'4 MiB以下のMP3を選択してください。'});
+      if (!event.body) return result(413,sizeError);
+      let bytes;
+      if (event.isBase64Encoded) {
+        if (event.body.length > Math.ceil(binaryLimit / 3) * 4) return result(413,sizeError);
+        bytes = Buffer.from(event.body,'base64');
+        if (bytes.length > binaryLimit) return result(413,sizeError);
+      } else if (/^text\/plain(?:;|$)/i.test(event.headers['content-type'] || '')) {
+        bytes = decodeLargeUpload(event.body);
       }
-      const bytes = Buffer.from(event.body,'base64');
-      if (bytes.length > limit) return result(413,{error:'4 MiB以下のMP3を選択してください。'});
+      if (!bytes) return result(413,sizeError);
       if (!isMP3(bytes)) return result(415,{error:'読み取れるMP3を選択してください。'});
       payload.content = bytes.toString('base64');
     }
