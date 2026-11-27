@@ -361,8 +361,13 @@ for (const type of ['gesturestart','gesturechange','contextmenu']) {
     if (touchOnGame(event) && event.cancelable) event.preventDefault();
   },{passive:false});
 }
-document.addEventListener('pointerdown', () => audio.unlock(), {once: true, capture: true});
-document.addEventListener('keydown', () => audio.unlock(), {once: true, capture: true});
+// Touch activation is available on pointerup on mobile browsers.
+function unlockGameAudio() {
+  if (audio.context?.state !== 'running') audio.unlock();
+}
+document.addEventListener('pointerup', unlockGameAudio, {capture:true});
+document.addEventListener('click', unlockGameAudio, {capture:true});
+document.addEventListener('keydown', unlockGameAudio, {capture:true});
 
 function fieldTrack() {
   if (interior) return interior.site.kind === 'inn' ? 'innEntry' : interior.site.kind === 'tavern' ? 'tavern' :
@@ -374,15 +379,25 @@ function fieldTrack() {
   return ['forest','coast','snow'].includes(track) ? track : 'field';
 }
 
-const cityMusicRegions = new Set(['東京都','神奈川県','愛知県','京都府','大阪府','兵庫県','福岡県']);
-const merchantMusicSites = new Set(['weapon','armor','items','pharmacy','store','magic','smith','food','restaurant','tavern','casino']);
+const facilityRecordings = {
+  weapon:'15',armor:'15',items:'15',pharmacy:'15',store:'15',magic:'15',smith:'15',casino:'15',
+  inn:'16',tavern:'17',bank:'18',bath:'19',food:'20',restaurant:'20'
+};
+
 function setFieldTrack() {
   const score = fieldTrack();
-  if (interior?.site.kind === 'ruin') return audio.setTrack(score,'dungeon');
-  if (interior && merchantMusicSites.has(interior.site.kind)) return audio.setTrack(score,'tavern');
-  if (!interior && townNight()) return audio.setTrack(score,'night');
-  if (score.startsWith('town') && cityMusicRegions.has(prefectures[chapterOf(player.x)].name)) return audio.setTrack(score,'city');
-  audio.setTrack(score);
+  if (interior && facilityRecordings[interior.site.kind]) {
+    return audio.setTrack(score,facilityRecordings[interior.site.kind]);
+  }
+  const chapter = chapterOf(player.x);
+  // The existing story introduces the rift after Soso's rescue.
+  if (!interior && chapter >= originalFinal - 1 && chapter <= originalFinal &&
+      activeEnemies(originalFinal).some(enemy => isFinalBoss(enemy) && enemy.hp > 0)) {
+    return audio.setTrack(score,'27');
+  }
+  if (score === 'dungeon' || interior?.site.kind === 'ruin') return audio.setTrack(score,'08');
+  if (score.startsWith('town')) return audio.setTrack(score,'13');
+  audio.setTrack(score,score === 'forest' ? '07' : '06');
 }
 
 function panel(title, lines, buttons) {
@@ -423,6 +438,7 @@ function panel(title, lines, buttons) {
 }
 function resume() {
   audio.stopPreview();
+  if (mode === 'field' && !innScene && !bathScene && !quizOpen) setFieldTrack();
   facilityGathering = null;
   paused = false;
   menuActive = false;
@@ -446,7 +462,7 @@ function arriveHome() {
   done = true;
   mode = 'home';
   save();
-  audio.setTrack('ending');
+  audio.setTrack('ending','30');
   $('pause').hidden = $('actions').hidden = true;
   say('');
   panel('おかえり、ソソ', [
@@ -455,18 +471,28 @@ function arriveHome() {
   ], [['旅を振り返る', () => {
     enterField();
     say('ソソは伸びをして、また一美の後をついてきた。');
-  }]]);
+  },true]]);
+  const exit = $('panel-buttons').querySelector('button');
+  audio.waitForRecording('30').then(() => { exit.disabled = false; });
 }
 
 function showTitle() {
   const data = readAdventure();
-  const begin = () => {
-    audio.setTrack('home');
-    panel('小さな家の朝', [
-      '貧しい暮らしをしている一美の宝物は、古い剣と愛猫ソソ。ふたりは小さな家で、わずかなパンを分け合って暮らしていた。',
-      'ある朝、戸口にソソの足跡と荷車の跡だけが残っていた。一美は剣を手に、ソソを取り戻す旅に出る。'
-    ], [['街道へ出る', () => { enterField(); save(); }]]);
-  };
+  const intro = [
+    ['小さな家の朝','02','貧しい暮らしをしている一美の宝物は、古い剣と愛猫ソソ。','ソソとの思い出'],
+    ['ソソとの思い出','03','ふたりは小さな家で、わずかなパンを分け合って暮らしていた。','戸口を調べる'],
+    ['ソソがいない','04','ある朝、戸口にソソの足跡と荷車の跡だけが残っていた。','旅支度をする'],
+    ['冒険への旅立ち','05','一美は剣を手に、ソソを取り戻す旅に出る。','街道へ出る']
+  ];
+  function showIntro(index) {
+    const [title,recording,line,label] = intro[index];
+    audio.setTrack('home',recording);
+    panel(title,[line],[[label,() => {
+      if (index + 1 < intro.length) showIntro(index + 1);
+      else { enterField(); save(); }
+    }]]);
+  }
+  const begin = () => showIntro(0);
   const actions = [['はじめから', () => {
     if (!data || confirm('保存済みの冒険を上書きしますか？')) {
       removeAdventure();
@@ -557,6 +583,7 @@ function openMenu() {
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
   audio.stopPreview();
+  if (mode === 'field' && ['14','17','21','23'].includes(audio.recording)) setFieldTrack();
   menuActive = true;
   $('pause').setAttribute('aria-expanded','true');
   const actions = [['閉じる',resume]];
@@ -670,6 +697,7 @@ function useHerb() {
 }
 
 function ownedEquipment() {
+  audio.setTrack(audio.track,'14');
   const current = equipped('armor');
   const offers = [
     ['メニューに戻る',openMenu],
@@ -757,7 +785,7 @@ function openShrine(shrine, chapter, optional) {
   if (shrine.solved) return;
   destination = null;
   quizOpen = true;
-  audio.setTrack(fieldTrack(),'riddle');
+  audio.setTrack(fieldTrack(),'24');
   const question = shrineQuestion(shrine, chapter);
   save();
   function close() {
@@ -789,6 +817,7 @@ function openShrine(shrine, chapter, optional) {
             optional.success();
           } else {
             grantStoneReward(shrine);
+            audio.playInterlude('29');
             panel('正解・' + shrine.name,[question.answer,question.hint,'獲得　' + stoneRewardLabel(shrine)],[['旅に戻る',resume]]);
           }
           save();
@@ -1046,6 +1075,7 @@ function hurtEnemy(enemy, damage) {
     player.gold = Math.min(bankLimit, player.gold + 48 + enemy.hiddenRegion * 4);
     save();
     audio.play('victory');
+    audio.playInterlude('29');
     panel('隠しボスを討伐', [enemy.name + 'を討伐し、図鑑に登録した。'], [['街道に戻る', resume]]);
     return;
   }
@@ -1055,6 +1085,7 @@ function hurtEnemy(enemy, damage) {
     leaveTrial();
     save();
     audio.play('victory');
+    audio.playInterlude('29');
     panel('試練に勝利した', [enemy.name + 'を討伐した。', '限定装備 ' + enemy.reward.name, '称号 ' + enemy.title],
       [['街道に戻る', resume]]);
     return;
@@ -1093,7 +1124,7 @@ function hurtEnemy(enemy, damage) {
     joined = true;
     cat.x = player.x - 18;
     cat.y = player.y;
-    audio.setTrack('soso');
+    audio.setTrack('soso','25');
     panel('第10章クリア・ソソが仲間になった', [
       '「気まぐれで私の膝に乗っただけの猫だと思った」アウレリオは檻の鍵を落とした。「だが、あの力を見て、連れ去ることにした」',
       '世界最強のソソは、一美の足もとでおなかを見せた。けれど空の亀裂を見ると、毛を逆立てて一美の隣に並んだ。',
@@ -1113,6 +1144,7 @@ function hurtEnemy(enemy, damage) {
       '「世界を救ったんだね、私たち」返事の代わりに、ソソは一美の靴ひもにじゃれた。'
     ], [['自宅へ向かう', () => { guide(); resume(); }], ['歩いて帰る', resume]]);
   }
+  audio.playInterlude('29');
   save();
 }
 
@@ -1175,9 +1207,10 @@ function encounter(enemy, approach = 'normal') {
 }
 
 function setEncounterTrack(enemy) {
-  if (isFinalBoss(enemy)) audio.setTrack('boss','finalboss');
+  if (isFinalBoss(enemy)) audio.setTrack('boss','28');
   else audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
-    enemy.rank === 'mid' ? 'midboss' : enemy.boss ? 'boss' : 'battle');
+    enemy.rank === 'mid' ? 'midboss' : enemy.boss ? 'boss' : 'battle',
+    enemy.trial !== undefined ? '12' : enemy.rank === 'mid' ? '10' : enemy.boss ? '11' : '09');
 }
 
 function tryEscapeBattle() {

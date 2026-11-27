@@ -562,7 +562,7 @@ function updateActionCat(dt) {
     audio.play('awake' + cat.form);
     say('ソソが第' + (cat.form + 1) + '形態・' + next.name + 'に覚醒！', 3);
     if (cat.form === 5) {
-      audio.setTrack('genesis');
+      audio.playInterlude('26');
       startCinema('awakening');
     }
   }

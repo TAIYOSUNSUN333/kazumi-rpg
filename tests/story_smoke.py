@@ -10,6 +10,9 @@ with sync_playwright() as pw:
   page.goto(os.getenv('KAZUMI_TEST_URL', 'http://127.0.0.1:3009/'))
   buttons=lambda n: page.get_by_role('button',name=n,exact=True)
   buttons('はじめから').tap()
+  buttons('ソソとの思い出').tap()
+  buttons('戸口を調べる').tap()
+  buttons('旅支度をする').tap()
   buttons('街道へ出る').tap()
   result=page.evaluate('''() => {
     Math.random=()=>.5;

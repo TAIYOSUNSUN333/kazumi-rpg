@@ -65,8 +65,8 @@ function decoratePanel(title) {
 
   const character = [...knownActors.keys()].find(name => title.startsWith(name + 'を') || title.startsWith(name + 'と')) ||
     (title === '仲間とのひととき' ? currentCompanion()?.name : null) ||
-    (title === 'ソソは倒れた' ? 'ソソ' : null) ||
-    (/^(小さな家の朝|若草山から続く道|世界に朝が戻った|一美は倒れた)/.test(title) ? '一美' : null);
+    (['ソソとの思い出','ソソがいない','ソソは倒れた'].includes(title) ? 'ソソ' : null) ||
+    (/^(小さな家の朝|冒険への旅立ち|若草山から続く道|世界に朝が戻った|一美は倒れた)/.test(title) ? '一美' : null);
   if (!character) return;
   const portrait = knownActors.get(character);
   const mood = /別れ|倒れ/.test(title) ? 'solemn' : /ひととき/.test(title) ? 'warm' : 'calm';

@@ -490,6 +490,7 @@ function shareTownEvent(site) {
       member.affinity >= 15 ? 'また一緒に休みに来よう。' : site.kind === 'food' || site.kind === 'restaurant' ?
         'この町の味を覚えておきたいね。' : '歩き疲れたね。少し話していこう。')+'」');
   }
+  audio.setTrack(audio.track,'21');
   facilityGathering = {guests,site,start:performance.now()};
   save();
   panel('仲間とのひととき',lines,[['戻る',servicePanel]]);
@@ -508,7 +509,8 @@ function servicePanel(note = '') {
       ['宝箱を開ける', () => { claimStageCache(path); servicePanel(); }, claimed], ['戻る',resume]
     ]);
   }
-  if (site.kind === 'inn') audio.setTrack('innDesk');
+  if (site.kind === 'inn') audio.setTrack('innDesk','16');
+  else setFieldTrack();
   const town = towns[site.chapter];
   const [name, keeper] = townTypes[site.kind];
   const services = [['室内を歩く', resume]];

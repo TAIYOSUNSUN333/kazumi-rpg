@@ -8,6 +8,9 @@ with sync_playwright() as pw:
     p.on('pageerror',lambda e:errs.append(str(e)))
     p.goto(os.getenv('KAZUMI_TEST_URL','http://127.0.0.1:3009/'))
     p.get_by_role('button',name='はじめから',exact=True).tap()
+    p.get_by_role('button',name='ソソとの思い出',exact=True).tap()
+    p.get_by_role('button',name='戸口を調べる',exact=True).tap()
+    p.get_by_role('button',name='旅支度をする',exact=True).tap()
     p.get_by_role('button',name='街道へ出る',exact=True).tap()
     result=p.evaluate('''() => {
       Math.random=()=>.5;

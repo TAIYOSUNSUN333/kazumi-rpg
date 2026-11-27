@@ -258,6 +258,7 @@ function bladeForm() {
 }
 
 function actionEquipment() {
+  audio.setTrack(audio.track,'14');
   const weapon = equipped('weapon');
   const chooseBase = index => {
     slashBase = index;

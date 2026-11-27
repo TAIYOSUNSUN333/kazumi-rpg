@@ -199,6 +199,7 @@ function claimStageCache(path) {
   player.gold = Math.min(bankLimit,player.gold + gold);
   player.herbs = Math.min(10000,player.herbs + 2);
   audio.play('stoneReward');
+  audio.playInterlude('29');
   say('脇道の宝箱から ' + gold + 'G と薬草2個を見つけた。');
   save();
 }

@@ -141,7 +141,7 @@ function tourPanel(note = '') {
       entry.dungeon = true;
       resetJump();
       resume();
-      audio.setTrack('dungeon');
+      audio.setTrack('dungeon','08');
       save();
     }, !entry.photo]
   ];
@@ -204,7 +204,10 @@ function travelBook() {
       nationalPrize = true;
       player.gold = Math.min(bankLimit, player.gold + 4700);
       player.shards += 47;
-    }, () => panel('称号「全国を結ぶ旅人」', ['特別報酬 4,700G、星の欠片47個。'], [['手帳へ', travelBook]])),
+    }, () => {
+      audio.playInterlude('29');
+      panel('称号「全国を結ぶ旅人」', ['特別報酬 4,700G、星の欠片47個。'], [['手帳へ', travelBook]]);
+    }),
     complete !== 47 || nationalPrize]
   ]);
 }

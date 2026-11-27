@@ -22,13 +22,6 @@ async function encodeLargeUpload(file) {
 }
 let generation = 0;
 let busy = false;
-const songs = ['星を継ぐ旅','風の街道','小さな灯の町','木漏れ日の森','深き岩の記憶',
-  '潮騒の岬','白銀の峠','星明かりの旅路','剣と疾風','立ちはだかる影',
-  '王座を揺らす剣','四つの王冠','最後の星蝕','旅籠の灯','湯けむりの庭',
-  '宵の酒場','ふたりの星','さよならの余韻','ソソの小さな足音','おかえり、ソソ',
-  '覚醒の鼓動','創世の光','契約の呼び声','伝説の同行者','神話の邂逅',
-  '勝利の星章','消えゆく灯','石碑のささやき','大都市の灯火','旅籠の朝'];
-
 function request(method, track, body, progress) {
   return new Promise((resolve,reject) => {
     const xhr = new XMLHttpRequest();
@@ -77,10 +70,10 @@ async function liveStatus(track, signal) {
   return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('') === track.sha;
 }
 
-function trackCard(track, index) {
+function trackCard(track) {
   const article = document.createElement('article');
   const name = document.createElement('h2');
-  name.textContent = String(index+1).padStart(2,'0')+'　'+songs[index];
+  name.textContent = track.id;
   const scene = document.createElement('p');
   scene.textContent = '使用場面　'+track.scene;
   const filename = document.createElement('small');
@@ -93,7 +86,7 @@ function trackCard(track, index) {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.mp3,audio/mpeg';
-  input.setAttribute('aria-label',songs[index]+'のMP3を選択');
+  input.setAttribute('aria-label',track.id+'番のMP3を選択');
   const progress = document.createElement('progress');
   progress.max = 100;
   progress.hidden = true;

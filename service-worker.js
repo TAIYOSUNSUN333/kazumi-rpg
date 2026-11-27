@@ -1,6 +1,6 @@
 // Change the cache name whenever a published app shell changes.
 const cachePrefix = 'kazumi-rpg-';
-const cacheName = cachePrefix + 'action-8';
+const cacheName = cachePrefix + 'action-11';
 const shellFiles = [
   './', './index.html', './game.css', './manifest.webmanifest',
   './prefectures.js', './world.js', './riddles.js', './stones.js', './bgm.js', './audio.js',

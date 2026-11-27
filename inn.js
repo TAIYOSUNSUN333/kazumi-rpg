@@ -181,7 +181,8 @@ function advanceInn(dt) {
     scene.night.id === 'late' ? scene.night.guest.name+'が最後に大きく伸びをした。' : '窓辺の鳥の声で、一人ずつ目を覚ました。',
     'みんなで'+prefectures[scene.site.chapter].dish+'の朝食を囲んだ。','旅支度を整え、受付へ向かった。'
   ];
-  audio.setTrack((index === 3 && scene.conversation.romance || index === 7 && scene.night.id === 'romance') ? 'romance' : beat.track);
+  const romance = index === 3 && scene.conversation.romance || index === 7 && scene.night.id === 'romance';
+  audio.setTrack(romance ? 'romance' : beat.track,romance ? '22' : index === 10 ? '20' : '16');
   $('stay-caption').textContent = captions[index];
   $('stay-choices').replaceChildren();
   if (index === 7 && ['owl','snore','laugh'].includes(scene.night.id)) audio.play('inn-'+scene.night.id);
@@ -246,7 +247,7 @@ function finishStay() {
     profile.blessing ? '宿を出た。全快し、翌朝まで攻撃力が上昇した。' : '宿を出た。HP・MP・疲労が全快した。',7);
   save();
   if (departed) {
-    audio.cue('farewell');
+    audio.setTrack('loss','23');
     panel(member.name+'の置き手紙',[
       '「今は一緒に旅を続けられない。先に出る」',
       '手持ちの'+member.departed.gold+'Gがなくなっていた。銀行の預金は残っている。'

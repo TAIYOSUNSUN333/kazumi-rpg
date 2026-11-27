@@ -13,6 +13,9 @@ def button(page,name):
 def begin(page):
     page.goto(URL)
     button(page,'はじめから').tap()
+    button(page,'ソソとの思い出').tap()
+    button(page,'戸口を調べる').tap()
+    button(page,'旅支度をする').tap()
     button(page,'街道へ出る').tap()
 
 

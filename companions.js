@@ -127,7 +127,13 @@ function remember(member, event) {
   if (member.history.length > 50) member.history.shift();
 }
 
-function recruitment(npc, back = resume) {
+function recruitment(npc, onBack = resume) {
+  const {track,recording} = audio;
+  audio.setTrack('tavern','17');
+  const back = () => {
+    audio.setTrack(track,recording);
+    onBack();
+  };
   const profile = companionProfile(npc.name);
   const record = companions.get(npc.name);
   const candidate = record || initialCompanion(npc.name);
@@ -154,7 +160,8 @@ function recruitment(npc, back = resume) {
         record.affinity = record.trust = -20;
         remember(record,'和解して返金を受けた');
         save();
-        recruitment(npc,back);
+        audio.setTrack(track,recording);
+        recruitment(npc,onBack);
       },!ready],['戻る',back]
     ]);
     return;
@@ -168,7 +175,6 @@ function recruitment(npc, back = resume) {
       remember(member,'加入');
       save();
       back();
-      if (!record) audio.cue(profile.recruitCue);
     }],['いいえ',back]
   ]);
 }
@@ -177,8 +183,14 @@ const nearTavern = () => interior?.site.kind === 'tavern' && !siteAvailability(i
 
 function tavern(remote = false) {
   if (!remote && (mode !== 'field' || !nearTavern())) return;
+  if (!battle) audio.setTrack('tavern','17');
   const back = () => tavern(remote);
-  const actions = [[remote ? 'メニューに戻る' : '窓口に戻る',remote ? openMenu : servicePanel]];
+  const leave = () => {
+    if (!battle) setFieldTrack();
+    if (remote) openMenu();
+    else servicePanel();
+  };
+  const actions = [[remote ? 'メニューに戻る' : '窓口に戻る',leave]];
   for (const member of activeCompanions()) actions.push([companionName(member),() => companionOptions(member,back,remote)]);
   if (!battle) {
     if (!companions.has('クルミ')) actions.push(['クルミを誘う',() => recruitment(npcs.find(npc => npc.name === 'クルミ'),back)]);
@@ -219,8 +231,9 @@ function companionOptions(member,back,remote) {
         member.trust = clamp((member.trust || 0)+2,-100,100);
         save();
       }
+      audio.setTrack(audio.track,'21');
       panel(name,[name + '「' + (profile.fit < 0 ? '歩く速さは違うけれど、一緒なら知らない景色が見えてくるね。' :
-        'ここで見た景色を、次の旅先でも思い出しそうだね。') + '」'],[['戻る',() => companionOptions(member,back,remote)]]);
+        'ここで見た景色を、次の旅先でも思い出しそうだね。') + '」'],[['戻る',() => { audio.setTrack('tavern','17'); companionOptions(member,back,remote); }]]);
     }],['隊列の先頭へ',() => {
       player.party = [member.name,...player.party.filter(name => name !== member.name)];
       save();
@@ -232,7 +245,7 @@ function companionOptions(member,back,remote) {
       remember(member,'酒場で離脱');
       save();
       back();
-      audio.cue('farewell');
+      audio.playInterlude('23');
     }],['いいえ',back]])]);
     if (member.monster) actions.push(['契約を解く',() => panel(name + 'との契約を解きますか？',[
       '契約石を再び使えるようになります。'

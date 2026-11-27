@@ -354,7 +354,7 @@ function updateCommandAwakening(turn) {
   audio.play('awake' + cat.form);
   if (cat.form === 5) {
     startCinema('awakening');
-    audio.setTrack('genesis');
+    audio.playInterlude('26');
   }
 }
 

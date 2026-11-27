@@ -13,6 +13,9 @@ def button(page, name):
 def start(page):
     page.goto(URL, wait_until='load')
     button(page, 'はじめから').tap()
+    button(page, 'ソソとの思い出').tap()
+    button(page, '戸口を調べる').tap()
+    button(page, '旅支度をする').tap()
     button(page, '街道へ出る').tap()
     page.wait_for_function('mode === "field"')
 

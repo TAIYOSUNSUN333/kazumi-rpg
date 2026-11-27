@@ -21,7 +21,7 @@ function resumeBath() {
   $('stay-controls').hidden = false;
   $('stay-skip').textContent = '入浴演出をスキップ';
   $('stay-choices').replaceChildren();
-  audio.setTrack('bath');
+  audio.setTrack('bath','19');
   advanceBath(0);
 }
 

@@ -1,51 +1,49 @@
-const bgmCatalog = [
-  ['title','タイトル','title'],
-  ['field','フィールド','field'],
-  ['town','町・村','village'],
-  ['forest','森林','forest'],
-  ['dungeon','洞窟','dungeon'],
-  ['coast','海岸','coast'],
-  ['snow','雪山','snow'],
-  ['night','夜','field'],
-  ['battle','通常戦闘','battle'],
-  ['midboss','中ボス','midboss'],
-  ['boss','大ボス','boss'],
-  ['elite','四天王','emperor0'],
-  ['finalboss','ラスボス','boss'],
-  ['inn','宿屋','innEntry'],
-  ['onsen','温泉','bath'],
-  ['tavern','酒場・店舗','tavern'],
-  ['romance','恋愛','romance'],
-  ['farewell','別れ','loss'],
-  ['soso','ソソのテーマ','soso'],
-  ['ending','エンディング','ending'],
-  ['transform','ソソの変身','soso'],
-  ['soso_final','ソソ最終形態','genesis'],
-  ['summon','召喚獣','boss'],
-  ['legend','伝説級加入','village'],
-  ['mythic','神話級加入','genesis'],
-  ['victory','戦闘勝利','battle'],
-  ['defeat','戦闘敗北','loss'],
-  ['riddle','石碑クイズ','dungeon'],
-  ['city','大都市','village'],
-  ['morning','宿屋・起床','innWake']
-].map(([id,scene,score],index) => ({id,scene,score,file:String(index+1).padStart(2,'0')+'_'+id+'.mp3'}));
-const bgmById = new Map(bgmCatalog.map(item=>[item.id,item]));
-
-function recordingForScore(score) {
-  if (score.startsWith('town') || score === 'village') return 'town';
-  if (score.startsWith('emperor')) return 'elite';
-  if (score === 'innWake') return 'morning';
-  if (score.startsWith('inn')) return 'inn';
-  return ({bath:'onsen',genesis:'soso_final',loss:'defeat'})[score] || (bgmById.has(score) ? score : null);
-}
+const bgmScenes = [
+  'タイトル画面',
+  '一美の日常・平穏な生活',
+  '愛猫ソソとの思い出',
+  'ソソ誘拐事件',
+  '冒険への旅立ち',
+  '桜並木・街道・通常フィールド',
+  '森林・自然探索',
+  '洞窟・地下迷宮',
+  '通常戦闘・集団襲撃',
+  '中ボス戦',
+  '各章の大ボス戦',
+  '四天王戦',
+  '町・村・市街地',
+  '装備品選択・装備変更画面',
+  '商店・買い物',
+  '宿屋・休息・就寝',
+  '酒場・仲間募集・交流',
+  '銀行・預金・引き出し',
+  '温泉・入浴イベント',
+  '焼肉・食事イベント',
+  '仲間との友情・絆',
+  '恋愛・親密なイベント',
+  '仲間との別れ・悲しい場面',
+  'なぞなぞ・謎解き',
+  'ソソとの再会・救出',
+  'ソソの覚醒・第6形態への変身',
+  '世界崩壊の危機・終末',
+  'ラスボス戦・ヴィットリオ・レグルス',
+  '戦闘勝利・達成・報酬',
+  'エンディング・スタッフロール',
+];
+const eventRecordings = new Set(['02','03','04','05','23','25','26','29','30']);
+const bgmCatalog = bgmScenes.map((scene,index) => {
+  const number = index + 1;
+  const id = String(number).padStart(2,'0');
+  return {id,number,scene,file:'bgm_'+id+'.mp3',loop:!eventRecordings.has(id)};
+});
+const bgmById = new Map(bgmCatalog.map(item => [item.id,item]));
 
 function recordingURL(id) {
   return new URL('./assets/bgm/'+bgmById.get(id).file,document.baseURI);
 }
 
 function openSoundTest() {
-  panel('サウンドテスト',['登録済みのMP3を試聴できます。未登録の場面では従来のBGMが流れます。'],[
+  panel('サウンドテスト',['登録済みのMP3を番号順に試聴できます。'],[
     ['試聴を止める',() => audio.stopPreview()],['登録状況を更新',openSoundTest],['設定に戻る',settingsMenu]
   ]);
   const root = document.createElement('ul');
@@ -57,13 +55,13 @@ function openSoundTest() {
     const file = document.createElement('small');
     const status = document.createElement('span');
     const play = document.createElement('button');
-    label.textContent = item.scene;
+    label.textContent = item.id+'　'+item.scene;
     file.textContent = item.file;
     label.append(file);
     status.textContent = '確認中';
     status.className = 'sound-status';
     play.textContent = '試聴';
-    play.setAttribute('aria-label',item.scene+'を試聴');
+    play.setAttribute('aria-label',item.id+'番を試聴');
     play.disabled = true;
     play.onclick = async () => {
       audio.unlock();
