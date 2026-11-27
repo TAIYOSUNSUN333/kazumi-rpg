@@ -33,7 +33,7 @@ self.addEventListener('fetch',event => {
   // Admin screens and authenticated APIs always use the browser's network path.
   if (['bgm-admin','bgm-studio','.netlify/functions/bgm-admin','assets/bgm/']
     .some(path => url.href.startsWith(scope+path))) return;
-  const isShell = shellURLs.has(url.href);
+  const isShell = shellURLs.has(url.href) || shellURLs.has(url.origin + url.pathname);
   const isRoot = event.request.mode === 'navigate' && (url.pathname === new URL(scope).pathname ||
     shellURLs.has(url.origin + url.pathname));
   const isArtwork = url.href.startsWith(scope + 'assets/');
@@ -42,7 +42,7 @@ self.addEventListener('fetch',event => {
   event.respondWith((async () => {
     const cache = await caches.open(cacheName);
     const key = isRoot ? new URL('./',scope).href : event.request;
-    if (isRoot) {
+    {
       try {
         const response = await fetch(event.request, {cache:'no-cache'});
         if (response.ok) {
@@ -53,10 +53,6 @@ self.addEventListener('fetch',event => {
     }
     const saved = await cache.match(key);
     if (saved) return saved;
-    const response = await fetch(event.request);
-    if (response.ok && isArtwork) {
-      try { await cache.put(event.request,response.clone()); } catch {}
-    }
-    return response;
+    return Response.error();
   })());
 });

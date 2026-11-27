@@ -1,0 +1,13 @@
+timezone: Asia/Tokyo
+exclude:
+  - index.html
+  - service-worker.js
+  - bgm-admin
+  - bgm-studio
+  - netlify
+  - netlify.toml
+  - package.json
+  - package-lock.json
+  - DEVELOPMENT_PROGRESS.md
+  - GAME_SPEC.md
+  - tests

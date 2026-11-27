@@ -1,0 +1,10 @@
+---
+layout: null
+permalink: /index.html
+---
+{%- capture game -%}{% include_relative index.html %}{%- endcapture -%}
+{%- assign revision = site.github.build_revision | default: site.time | truncate: 8, '' -%}
+{%- capture release -%}data-release="v{{ site.data.playtest.version }} ({{ revision }}) ・ 最終更新 {{ site.time | date: '%Y-%m-%d %H:%M' }} JST"{%- endcapture -%}
+{%- capture script_suffix -%}.js?v={{ revision }}"></script>{%- endcapture -%}
+{%- capture style_suffix -%}game.css?v={{ revision }}"{%- endcapture -%}
+{{- game | replace: 'data-release=""', release | replace: '.js"></script>', script_suffix | replace: 'game.css"', style_suffix -}}
