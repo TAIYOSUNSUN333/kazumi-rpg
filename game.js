@@ -2,7 +2,6 @@ const $ = id => document.getElementById(id);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const numeric = (value, fallback, min, max) =>
   Number.isFinite(value) ? clamp(Math.floor(value), min, max) : fallback;
-const saveKey = 'kazumi';
 const storage = {
   read(key) {
     try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -11,12 +10,25 @@ const storage = {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
   }
 };
+const saveSlot = numeric(storage.read('kazumi-slot'),1,1,3);
+const slotKey = slot => slot === 1 ? 'kazumi' : 'kazumi-slot-' + slot;
+const saveKey = slotKey(saveSlot);
+const validAdventure = data => data && typeof data === 'object' && !Array.isArray(data) &&
+  (Number.isInteger(data.version) || Number.isFinite(data.xp) || Number.isFinite(data.x));
+function readAdventure(key = saveKey) {
+  const active = storage.read(key);
+  if (validAdventure(active)) return active;
+  const backup = storage.read(key + '-backup');
+  return validAdventure(backup) ? backup : null;
+}
+
 const player = {
   x: 25, y: 104, hp: 100, mp: 30, xp: 0, gold: 0, shards: 0, herbs: 0,
   weapon: 0, armor: 0, party: [], facing: {x: 1, y: 0}
 };
 let mode = 'title';
 let paused = false;
+let menuActive = false;
 let returning = false;
 let joined = false;
 const cat = {x: 0, y: 104, form: 0, hp: awakening[0].hp, mp: awakening[0].mp};
@@ -42,6 +54,9 @@ let jumps = 0;
 let magicAt = 0;
 let ring = false;
 let slashBase = null;
+let armorBase = null;
+let shieldOwned = false;
+let shieldEquipped = false;
 let shotGear = 'star';
 let quizOpen = false;
 let shrineDefeated = false;
@@ -62,37 +77,43 @@ const maxMP = () => 30 + (level() - 1) * 4 + stoneMaxMP;
 const attackPower = () => 10 + (level() - 1) * 3 + equipped('weapon').bonus + (townSeconds < innBuffUntil ? 4 : 0) + (townSeconds < stoneBuffUntil ? 6 : 0) + (player.party.includes('一郎') ? 2 : 0);
 const defense = () => 5 + (level() - 1) * 2 + equipped('armor').bonus + (player.party.includes('クルミ') ? 1 : 0) + (townSeconds < stoneBuffUntil ? 4 : 0);
 function equipped(type) {
+  if (type === 'armor' && armorBase !== null) return equipment.armor[armorBase];
   if (type === 'armor' && stoneArmor) return unlockedStoneArmor(stoneArmor);
   if (type === 'weapon' && slashBase !== null) return equipment.weapon[slashBase];
   return prefectures[regionalGear[type]]?.[type] || trials[trialGear[type]]?.reward || equipment[type][player[type]];
 }
 const activeEnemies = chapter => enemies.slice(chapter * 8, chapter * 8 + 8);
 const unlocked = enemy => !enemy.boss || enemy.rank === 'mid' || activeEnemies(enemy.chapter)[6].hp === 0;
+const enemyOnField = enemy => unlocked(enemy) && (!enemy.nightOnly || townNight());
 
+let battleStyle = storage.read('kazumi-battle-style') === 'command' ? 'command' : 'action';
 const prefs = storage.read('kazumi-audio');
 audio.setVolume(numeric(prefs?.volume, 45, 0, 100) / 100, prefs?.muted === true);
 audio.setMix(numeric(prefs?.music, 85, 0, 100) / 100, numeric(prefs?.effects, 80, 0, 100) / 100);
 
 function save(explicit = false) {
   if (trialVitals) return false;
-  const success = storage.write(saveKey, {
-    version: 10, stage:stageSnapshot(), stones:stoneSnapshot(), actionEquipment:{slashBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+  const previous = readAdventure();
+  const snapshot = {
+    version: 11, bathPending, pack, shieldOwned, shieldEquipped, stage:stageSnapshot(), stones:stoneSnapshot(), actionEquipment:{slashBase,armorBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
     enemies: enemies.map(enemy => enemy.hp), shrineDefeated,
     special: Math.max(0, specialAt - clock), joined, returning, done,
     trials: [...clearedTrials], trialGear, ring, pots: pots.map(pot => pot.broken)
-  });
+  };
+  const success = storage.write(saveKey,snapshot);
+  if (success) storage.write(saveKey + '-backup',previous || snapshot);
   if (explicit) say(success ? 'このブラウザに冒険を保存した。' : 'このブラウザでは保存できません。');
   return success;
 }
 
 function load(data) {
   if (!data || typeof data !== 'object') return;
-  const current = [4, 5, 6, 7, 8, 9, 10].includes(data.version);
-  ring = [5, 6, 7, 8, 9, 10].includes(data.version) && data.ring === true;
-  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8, 9, 10].includes(data.version) && data.pots?.[i] === true; });
+  const current = [4, 5, 6, 7, 8, 9, 10, 11].includes(data.version);
+  ring = [5, 6, 7, 8, 9, 10, 11].includes(data.version) && data.ring === true;
+  pots.forEach((pot, i) => { pot.broken = [5, 6, 7, 8, 9, 10, 11].includes(data.version) && data.pots?.[i] === true; });
   const modern = current || data.version === 3;
   const oldMap = data.version === 2;
   player.xp = numeric(data.xp, 0, 0, 1000000);
@@ -107,11 +128,16 @@ function load(data) {
     for (const index of data.trailCaches) if (Number.isInteger(index) && index >= 0 && index <= last) trailCaches.add(index);
   }
   player.gold = modern ? numeric(data.gold, 0, 0, bankLimit) : Math.floor(player.xp / 3);
+  restorePack(data.pack);
   player.herbs = modern ? numeric(data.herbs, 0, 0, 10000) : 0;
   player.weapon = numeric(data.weapon, 0, 0, equipment.weapon.length - 1);
   player.armor = numeric(data.armor, 0, 0, equipment.armor.length - 1);
   slashBase = Number.isInteger(data.actionEquipment?.slashBase) ?
     clamp(data.actionEquipment.slashBase,0,player.weapon) : null;
+  armorBase = Number.isInteger(data.actionEquipment?.armorBase) ?
+    clamp(data.actionEquipment.armorBase,0,player.armor) : null;
+  shieldOwned = data.shieldOwned === true;
+  shieldEquipped = shieldOwned && data.shieldEquipped === true;
   loadStones(data);
   const shot = data.actionEquipment?.shotGear;
   const savedSpell = routeSpellById.get(shot);
@@ -138,7 +164,7 @@ function load(data) {
     }
   });
   joined = current && data.joined === true;
-  returning = [9, 10].includes(data.version) && joined && data.returning === true;
+  returning = [9, 10, 11].includes(data.version) && joined && data.returning === true;
   done = current && returning && data.done === true;
   specialAt = modern ? numeric(Math.ceil(data.special), 0, 0, 15) : 0;
   if (current) {
@@ -160,9 +186,10 @@ function load(data) {
     }
   }
   loadTowns(data.town);
+  bathPending = interior?.site.kind === 'bath' && data.bathPending === interior.site.id ? data.bathPending : null;
   loadInn(data.inn);
   loadTourism(data.tourism);
-  if (![9, 10].includes(data.version)) {
+  if (![9, 10, 11].includes(data.version)) {
     for (let chapter = 0; chapter <= Math.min(originalFinal, checkpoint); chapter++) tourismFor(chapter).visited = true;
     if (current && data.done && activeEnemies(originalFinal).at(-1).hp === 0) {
       tourismFor(originalFinal).visited = true;
@@ -180,42 +207,54 @@ const keys = new Set();
 const keyActions = {
   ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
   KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down',
+  KeyB: 'limit', KeyH: 'herb', KeyT: 'think',
   Space: 'attack', ShiftLeft: 'dodge', ShiftRight: 'dodge', KeyX: 'shot', KeyZ: 'jump', KeyC: 'shot', KeyQ: 'guard', KeyV: 'dash', KeyF: 'crouch'
 };
 const controls = [...document.querySelectorAll('[data-hold]')];
 const attackButton = document.querySelector('[data-hold=attack]');
-const joystick = {id:null,x:0,y:0};
+const joystick = {id:null,x:0,y:0,centerX:0,centerY:0,radius:36};
 function resetJoystick() {
   joystick.id = null;
   joystick.x = joystick.y = 0;
+  $('joystick').hidden = true;
   $('stick-knob').style.transform = 'translate(-50%, -50%)';
 }
 function tiltJoystick(event) {
-  const box = $('joystick').getBoundingClientRect();
-  const x = (event.clientX - box.left - box.width / 2) / (box.width * .33);
-  const y = (event.clientY - box.top - box.height / 2) / (box.height * .33);
+  const x = (event.clientX - joystick.centerX) / joystick.radius;
+  const y = (event.clientY - joystick.centerY) / joystick.radius;
   const length = Math.hypot(x,y);
   joystick.x = length < .13 ? 0 : x / Math.max(1,length);
   joystick.y = length < .13 ? 0 : y / Math.max(1,length);
-  $('stick-knob').style.transform = 'translate(-50%, -50%) translate(' + joystick.x * box.width * .27 +
-    'px, ' + joystick.y * box.height * .27 + 'px)';
+  $('stick-knob').style.transform = 'translate(-50%, -50%) translate(' + joystick.x * joystick.radius * .82 +
+    'px, ' + joystick.y * joystick.radius * .82 + 'px)';
 }
-$('joystick').onpointerdown = event => {
+
+const movementSurface = $('scene');
+movementSurface.onpointerdown = event => {
   if (!movementAllowed() || joystick.id !== null || event.button !== 0) return;
   event.preventDefault();
   audio.unlock();
+  const gameBounds = $('game').getBoundingClientRect();
   joystick.id = event.pointerId;
-  event.currentTarget.setPointerCapture(event.pointerId);
+  joystick.centerX = event.clientX;
+  joystick.centerY = event.clientY;
+  const stick = $('joystick');
+  stick.style.left = (event.clientX - gameBounds.left) + 'px';
+  stick.style.top = (event.clientY - gameBounds.top) + 'px';
+  stick.hidden = false;
+  joystick.radius = stick.clientWidth * .33;
+  movementSurface.setPointerCapture(event.pointerId);
   tiltJoystick(event);
 };
-$('joystick').onpointermove = event => {
+movementSurface.onpointermove = event => {
   if (event.pointerId === joystick.id) tiltJoystick(event);
 };
 for (const type of ['pointerup','pointercancel','lostpointercapture']) {
-  $('joystick').addEventListener(type, event => {
+  movementSurface.addEventListener(type,event => {
     if (event.pointerId === joystick.id) resetJoystick();
   });
 }
+
 const pressed = action => keys.has(action) || [...held.values()].includes(action) || action === 'crouch' && touchCrouch;
 function clearInput(keepMovement = false) {
   for (const key of keys) {
@@ -231,6 +270,19 @@ function clearInput(keepMovement = false) {
 
 function perform(action) {
   if (!movementAllowed() || interior && !['jump','attack'].includes(action)) return;
+  if (isActionBattle()) {
+    if (battle.auto) return;
+    if (action === 'attack') {
+      const input = playableInput();
+      if (input.magnitude > .16) player.facing = directionTo(input.x,input.y);
+      swing(pressed('guard'));
+      return;
+    }
+    if (action === 'limit') return actionLimit();
+    if (action === 'herb') return useActionHerb();
+    if (action === 'think') return actionThinkOfSoso();
+    if (action === 'shot' || action === 'battle-magic') return castActionMagic();
+  }
   if (action === 'attack') beginCharge();
   if (action === 'dash') beginDash();
   if (action === 'dodge') dodge();
@@ -271,7 +323,7 @@ for (const button of controls) {
   }
   button.addEventListener('click', event => {
     if (event.detail !== 0 || !movementAllowed()) return;
-    if (action === 'attack') swing();
+    if (action === 'attack' && !isActionBattle()) swing();
     else perform(action);
   });
 }
@@ -296,40 +348,71 @@ window.addEventListener('keyup', event => {
 });
 window.addEventListener('blur', () => clearInput());
 document.addEventListener('visibilitychange', () => { if (document.hidden) clearInput(); });
-document.addEventListener('contextmenu', event => event.preventDefault());
+const playSurface = '#scene, #joystick, #actions, #arena-actions, #battle-commands';
+const touchOnGame = touch => touch.target instanceof Element && Boolean(touch.target.closest(playSurface));
+for (const type of ['touchstart','touchmove']) {
+  $('game').addEventListener(type,event => {
+    if (event.touches.length > 1 && Array.from(event.touches).some(touchOnGame) && event.cancelable) event.preventDefault();
+  },{passive:false});
+}
+for (const type of ['gesturestart','gesturechange','contextmenu']) {
+  $('game').addEventListener(type,event => {
+    if (touchOnGame(event) && event.cancelable) event.preventDefault();
+  },{passive:false});
+}
 document.addEventListener('pointerdown', () => audio.unlock(), {once: true, capture: true});
 document.addEventListener('keydown', () => audio.unlock(), {once: true, capture: true});
 
 function fieldTrack() {
-  if (interior) return interior.site.kind === 'inn' ? 'innEntry' :
+  if (interior) return interior.site.kind === 'inn' ? 'innEntry' : interior.site.kind === 'tavern' ? 'tavern' :
     ['regional','trailroom','secret'].includes(interior.site.kind) ? 'dungeon' : 'town' + interior.site.chapter;
   const chapter = chapterOf(player.x);
   if (player.x - chapter * span >= 0 && player.x - chapter * span < 355) return 'town' + chapter;
-  return [1, 3, 6, 9, 11].includes(chapter) ? 'dungeon' : 'field';
+  if ([3,6,9,11].includes(chapter)) return 'dungeon';
+  const track = prefectures[chapter].terrain;
+  return ['forest','coast','snow'].includes(track) ? track : 'field';
 }
 
 function panel(title, lines, buttons) {
   clearInput();
   paused = true;
-  $('panel').hidden = false;
+  const frame = $('panel');
+  frame.dataset.kind = menuActive ? 'menu' : mode === 'title' || mode === 'home' ? 'intro' : 'dialogue';
+  frame.hidden = false;
   $('panel-title').textContent = title;
-  $('panel-body').replaceChildren(...lines.map(line => {
+  $('panel-body').replaceChildren(...lines.filter(Boolean).map(line => {
     const p = document.createElement('p');
-    p.textContent = line;
+    const spoken = typeof line === 'string' && line.match(/^([^「]{1,24})\s*「(.+)」$/u);
+    if (spoken) {
+      const speaker = document.createElement('strong');
+      speaker.className = 'speaker';
+      speaker.textContent = spoken[1];
+      p.className = 'spoken';
+      p.append(speaker,'「' + spoken[2] + '」');
+    } else p.textContent = line;
     return p;
   }));
   decoratePanel(title);
-  $('panel-buttons').replaceChildren(...buttons.map(([label, callback, disabled]) => {
+  $('panel-buttons').replaceChildren(...buttons.map(([label, callback, disabled, icon]) => {
     const button = document.createElement('button');
     button.textContent = label;
     button.disabled = Boolean(disabled);
     button.onclick = callback;
+    if (icon) {
+      const symbol = document.createElement('span');
+      symbol.className = 'goods-icon';
+      symbol.setAttribute('aria-hidden','true');
+      symbol.style.backgroundColor = icon;
+      button.prepend(symbol);
+    }
     return button;
   }));
   $('panel-buttons').querySelector('button:not(:disabled)')?.focus({preventScroll: true});
 }
 function resume() {
   paused = false;
+  menuActive = false;
+  $('pause').setAttribute('aria-expanded','false');
   $('panel').hidden = true;
   document.activeElement?.blur();
 }
@@ -338,6 +421,7 @@ function enterField() {
   companionTrail.x = player.x - 24;
   companionTrail.y = player.y;
   companionTrail.height = 0;
+  otherTrails.clear();
   cat.x = player.x - 18;
   cat.y = player.y;
   audio.setTrack(fieldTrack());
@@ -348,7 +432,7 @@ function arriveHome() {
   done = true;
   mode = 'home';
   save();
-  audio.setTrack('home');
+  audio.setTrack('ending');
   $('pause').hidden = $('actions').hidden = true;
   say('');
   panel('おかえり、ソソ', [
@@ -361,35 +445,34 @@ function arriveHome() {
 }
 
 function showTitle() {
-  const data = storage.read(saveKey);
+  const data = readAdventure();
   const begin = () => {
     audio.setTrack('home');
     panel('小さな家の朝', [
-      '貧しい少女、一美の宝物は、古い剣と愛猫ソソ。ふたりは小さな家で、わずかなパンを分け合って暮らしていた。',
+      '貧しい暮らしをしている一美の宝物は、古い剣と愛猫ソソ。ふたりは小さな家で、わずかなパンを分け合って暮らしていた。',
       'ある朝、戸口にソソの足跡と荷車の跡だけが残っていた。一美は剣を手に、ソソを取り戻す旅に出る。'
     ], [['街道へ出る', () => { enterField(); save(); }]]);
   };
   const actions = [['はじめから', () => {
     if (!data || confirm('保存済みの冒険を上書きしますか？')) {
-      try { localStorage.removeItem(saveKey); } catch {}
+      removeAdventure();
       begin();
     }
   }]];
   if (data) actions.unshift(['冒険を再開', () => {
     load(data);
-    if (done) arriveHome();
-    else {
-      enterField();
-      if (innPending) resumeInn();
-      if (shrineDefeated) {
-        player.hp = 0;
-        defeat('一美は倒れた', '石碑の反動で一美は力尽きた。');
-      }
+    enterField();
+    if (innPending) resumeInn();
+    if (bathPending) resumeBath();
+    if (shrineDefeated) {
+      player.hp = 0;
+      defeat('一美は倒れた', '石碑の反動で一美は力尽きた。');
     }
   }]);
+  actions.push(['セーブ枠を選ぶ',showSaveSlots]);
   panel('一美のスター街道', [
     '愛猫ソソをさらわれた一美は、やがて47都道府県を巡る旅に出る。',
-    'スティックか矢印キーで移動。剣を長押しして移動するとダッシュ。下を向いてジャンプボタンを押し続けるとしゃがむ。キーボードはSpaceで剣、Zでジャンプ、Cで魔法、Eで調べる。'
+    '画面を押したまま指をずらすか、矢印キーで移動。剣を長押しして移動するとダッシュ。下を向いてジャンプボタンを押し続けるとしゃがむ。キーボードはSpaceで剣、Zでジャンプ、Cで魔法、Eで調べる。'
   ], actions);
 }
 
@@ -422,6 +505,19 @@ function settings() {
   reflect();
   $('panel-body').append(sound);
   graphicsSettings();
+  const style = document.createElement('select');
+  for (const [value,text] of [['action','アクション'],['command','コマンド']]) {
+    style.add(new Option(text,value));
+  }
+  style.value = battleStyle;
+  style.disabled = Boolean(battle);
+  style.onchange = () => {
+    battleStyle = style.value;
+    storage.write('kazumi-battle-style',battleStyle);
+  };
+  const label = document.createElement('label');
+  label.append('戦闘方式 ',style);
+  $('panel-body').append(label);
   if (document.fullscreenEnabled && $('game').requestFullscreen) {
     const fullscreen = document.createElement('button');
     fullscreen.textContent = document.fullscreenElement ? '全画面表示を終了' : '全画面表示';
@@ -443,44 +539,112 @@ function updateAudio(volume, muted) {
     music:Math.round(audio.musicVolume * 100), effects:Math.round(audio.effectsVolume * 100)});
 }
 function openMenu() {
-  if (innScene || doorTransition || quizOpen || shrineDefeated) return;
+  if (innScene || bathScene || doorTransition || quizOpen || shrineDefeated) return;
   if (battle && (!player.hp || joined && !cat.hp)) return;
   if (mode !== 'field' && mode !== 'battle') return;
-  const actions = [['戻る', resume]];
-  if (!battle) actions.push(['斬撃・魔法の装備', actionEquipment], ['石碑手帳', stoneJournal]);
-  if (!battle && interior) actions.push(['保存', () => { save(true); resume(); }], ['施設の案内', servicePanel,
-    Math.hypot(interior.x - 320, interior.y - 100) > 66]);
-  else if (!battle) actions.push(
-    ['全国手帳', travelBook],
-    ['観光案内', tourPanel, !nearScenicSpot()],
-    ['保存', () => { save(true); resume(); }],
-    ['装備', shop],
-    ['四天王の試練', openTrials, !joined],
-    ['薬草を使う', useHerb, !player.herbs || player.hp === maxHP()],
-    [returning && !done ? '自宅へ向かう' : '先へ進む', () => { guide(); resume(); }],
-    ['最初から', () => {
-      if (confirm('このブラウザの冒険を消して、最初から遊びますか？')) {
-        try { localStorage.removeItem(saveKey); } catch {}
-        location.reload();
-      }
-    }]
+  menuActive = true;
+  $('pause').setAttribute('aria-expanded','true');
+  const actions = [['閉じる',resume]];
+  if (isActionBattle() && learnedSummons().length) actions.push(['召喚魔法',summonMenu]);
+  if (isActionBattle()) actions.push(['逃げる',tryEscapeBattle,isFinalBoss(battle.enemy) || clock < (battle.escapeAt || 0)]);
+  if (!battle) actions.push(
+    ['アイテム', itemMenu], ['魔法', magicMenu], ['装備', ownedEquipment], ['ステータス', statusMenu],
+    ['マップ', travelBook], ['セーブ・ロード', saveMenu], ['酒場', () => tavern(true)],
+    ['石碑手帳', stoneJournal], ['召喚獣図鑑',summonDex], ['設定', settingsMenu]
   );
-  const member = currentCompanion();
-  panel('メニュー', [
-    prefectures[chapterOf(player.x)].name + '　' + townTime(),
-    'Lv.' + level() + '　経験値 ' + player.xp + '/' + nextXp() + '（あと' + (nextXp() - player.xp) + '）',
-    player.gold + 'G　攻撃 ' + attackPower() + ' / 防御 ' + defense(),
-    '武器 ' + equipped('weapon').name + '　防具 ' + equipped('armor').name,
-    '薬草 ' + player.herbs + '　星の欠片 ' + player.shards,
-    nearTavern() || battle ? '' : '酒場のある街では建物の扉から入れる。',
-    '仲間 ' + ([...player.party, ...(joined ? ['ソソ'] : [])].join('、') || 'なし'),
-    ...(member ? [member.name + ' Lv.' + companionLevel(member) + '　HP ' + member.hp + '/' + companionHP(member) +
-      '　MP ' + member.mp + '/' + companionMP(member)] : [])
-  ], actions);
+  if (!battle && interior) {
+    actions.push(['施設の案内', servicePanel, !roomCounterReady()]);
+  } else if (!battle) {
+    actions.push(['観光案内', tourPanel, !nearScenicSpot()], ['四天王の試練', openTrials, !joined],
+      [returning && !done ? '自宅へ向かう' : '先へ進む', () => { guide(); resume(); }]);
+  }
+  if (battle) actions.push(['契約する',offerCapture,!canCapture()],['酒場',() => tavern(true)],['設定',settingsMenu]);
+  panel('メニュー',[],actions);
+}
+
+$('pause').onclick = () => {
+  if (menuActive) resume();
+  else if (!paused) openMenu();
+};
+
+function settingsMenu() {
+  panel('設定',[],[['メニューに戻る',openMenu]]);
   settings();
 }
-$('pause').onclick = openMenu;
+
+function statusMenu() {
+  const member = currentCompanion();
+  panel('ステータス',[
+    '一美　Lv.' + level() + '　HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP(),
+    '攻撃 ' + attackPower() + '　防御 ' + defense() + '　経験値 ' + player.xp + '/' + nextXp(),
+    '所持金 ' + player.gold + 'G　預金 ' + townBank + 'G',
+    prefectures[chapterOf(player.x)].name + '　' + townTime(),
+    member ? member.name + ' Lv.' + companionLevel(member) + '　HP ' + member.hp + '/' + companionHP(member) +
+      '　MP ' + member.mp + '/' + companionMP(member) + '　好感度 ' + member.affinity : '',
+    joined ? 'ソソが同行中' : ''
+  ],[['メニューに戻る',openMenu]]);
+}
+
+function itemMenu() {
+  const owned = marketGoods.filter(item => goodCount(item)>0);
+  panel('アイテム',[
+    '星の欠片 ×' + player.shards + '　住民の依頼などで使用。',
+    owned.length ? '使用対象は一美。回復できる道具を選択。' : '回復に使える道具を持っていない。'
+  ],[...owned.map(item => [item.name + ' ×' + goodCount(item) + '　' + goodEffect(item),
+    () => useGood(item),!canUseGood(item),item.color]),['メニューに戻る',openMenu]]);
+}
+
+function magicMenu() {
+  const options = [
+    {id:'star',name:'ソソを思う',element:'光',cost:10,hint:'周囲の敵。ボスには耐性があります。',known:true},
+    {id:'ring',name:'燐光の火球',element:'炎',cost:4,hint:'前方の敵。指輪から火球を放つ。',known:ring},
+    {id:'moon',name:stoneSpell.name,element:'光',cost:stoneSpell.mp,hint:'一美のHPを回復する。',known:stoneMagicLearned},
+    ...routeSpells.map(spell=>({...spell,element:({fire:'炎',frost:'氷',thunder:'雷',wind:'風',earth:'土',light:'光'})[spell.id],
+      known:stageRuneAvailable(spell.id)}))
+  ];
+  panel('魔法',options.map(spell=>spell.name+'　'+spell.element+'　MP '+spell.cost+'　'+
+    (spell.known ? spell.hint : '未習得。'+(spell.chapter !== undefined ? '指輪と第'+(spell.chapter+1)+'章への到達が必要。' : ''))),
+  [...options.filter(spell=>spell.known).map(spell=>[spell.name+'をセット',() => {
+    shotGear = spell.id;
+    save();
+    magicMenu();
+  },shotGear === spell.id]),['戻る',openMenu]]);
+}
+
+function saveMenu() {
+  panel('セーブ・ロード',['セーブ枠 ' + saveSlot + ' を使用中。'],[
+    ['保存',() => { save(true); resume(); }],
+    ['保存済みの冒険を開く',() => { if (confirm('保存した時点に戻りますか？')) location.reload(); },!readAdventure()],
+    ['別のセーブ枠を開く',showSaveSlots],
+    ['最初から',() => {
+      if (confirm('現在の冒険を消して、最初から遊びますか？')) {
+        removeAdventure();
+        location.reload();
+      }
+    }], ['メニューに戻る',openMenu]
+  ]);
+}
+
+function removeAdventure() {
+  try {
+    localStorage.removeItem(saveKey);
+    localStorage.removeItem(saveKey + '-backup');
+  } catch {}
+}
+
+function showSaveSlots() {
+  const buttons = [1,2,3].map(slot => {
+    const info = readAdventure(slotKey(slot));
+    const data = info ? '第' + (chapterOf(info.x || 0)+1) + '章' : '空き';
+    return ['セーブ枠 '+slot+'　'+data,() => {
+      if (storage.write('kazumi-slot',slot)) location.reload();
+    },slot === saveSlot];
+  });
+  panel('セーブ枠',['切り替えると、そのセーブ枠のタイトルに戻ります。'],[...buttons,['戻る',saveMenu]]);
+}
+
 function useHerb() {
+  if (!player.herbs || player.hp >= maxHP() || battle) return;
   player.herbs--;
   player.hp = Math.min(maxHP(), player.hp + 35);
   save();
@@ -488,52 +652,44 @@ function useHerb() {
   say('薬草でHPを回復した。');
 }
 
-function shop() {
-  const offers = [['メニューに戻る', openMenu]];
-  for (const type of ['weapon', 'armor']) {
-    const item = equipment[type][player[type] + 1];
-    if (!item) continue;
-    offers.push([item.name + '　' + item.cost + 'G', () => {
-      player.gold -= item.cost;
-      player[type]++;
-      if (type === 'armor') stoneArmor = null;
-      if (type === 'weapon') slashBase = null;
-      trialGear[type] = null;
-      regionalGear[type] = null;
+function ownedEquipment() {
+  const current = equipped('armor');
+  const offers = [
+    ['メニューに戻る',openMenu],
+    ['武器・魔法の付け替え',actionEquipment]
+  ];
+  function wear(item,label,change) {
+    offers.push([label + '（防御 ' + (item.bonus >= current.bonus ? '+' : '') + (item.bonus-current.bonus) + '）',() => {
+      armorBase = stoneArmor = trialGear.armor = regionalGear.armor = null;
+      change();
       save();
-      shop();
-    }, player.gold < item.cost]);
+      ownedEquipment();
+    },item === current]);
   }
-  if (!ring) offers.push([starterRing.name + '　' + starterRing.cost + 'G', () => {
-    player.gold -= starterRing.cost;
-    ring = true;
+  for (const [i,item] of equipment.armor.slice(0,player.armor+1).entries()) {
+    wear(item,item.name,() => { armorBase = i; });
+  }
+  for (const id of clearedTrials) {
+    if (trials[id].armor) wear(trials[id].reward,trials[id].reward.name,() => { trialGear.armor = id; });
+  }
+  for (const [id,entry] of tourBook.entries()) {
+    if (entry?.armor) wear(prefectures[id].armor,prefectures[id].armor.name,() => { regionalGear.armor = id; });
+  }
+  if (shieldOwned) offers.push([shieldEquipped ? '木枠の盾を外す' : '木枠の盾を装備',() => {
+    shieldEquipped = !shieldEquipped;
     save();
-    shop();
-  }, player.gold < starterRing.cost]);
-  for (const index of clearedTrials) {
-    const trial = trials[index];
-    const type = trial.armor ? 'armor' : 'weapon';
-    offers.push([trial.reward.name + 'を装備', () => { trialGear[type] = index; regionalGear[type] = null; if (type === 'armor') stoneArmor = null; if (type === 'weapon') slashBase = null; save(); shop(); }, trialGear[type] === index]);
-  }
+    ownedEquipment();
+  }]);
   for (const stone of waysideStones) {
     const item = unlockedStoneArmor(stone.id);
-    if (item) offers.push([item.name + 'を装備', () => {
-      stoneArmor = stone.id;
-      trialGear.armor = regionalGear.armor = null;
-      save();
-      shop();
-    }, stoneArmor === stone.id]);
+    if (item) wear(item,item.name,() => { stoneArmor = stone.id; });
   }
-  for (const type of ['weapon', 'armor']) {
-    if (type === 'armor' && stoneArmor || trialGear[type] !== null || regionalGear[type] !== null) offers.push([equipment[type][player[type]].name + 'に戻す', () => {
-      trialGear[type] = null; regionalGear[type] = null; if (type === 'armor') stoneArmor = null; if (type === 'weapon') slashBase = null; save(); shop();
-    }]);
-  }
-  panel('装備を整える', [
-    '所持金 ' + player.gold + 'G　指輪 ' + (ring ? starterRing.name : 'なし'),
-    equipped('weapon').name + '（攻撃 +' + equipped('weapon').bonus + '）',
-    equipped('armor').name + '（防御 +' + equipped('armor').bonus + '）'
-  ], offers);
+  panel('所持装備',[
+    '武器 ' + equipped('weapon').name + '　攻撃 +' + equipped('weapon').bonus,
+    '防具 ' + current.name + '　防御 +' + current.bonus,
+    '盾 ' + (shieldEquipped ? '木枠の盾（防御時の軽減率が上昇）' : 'なし'),
+    'アクセサリー ' + (shotGear === 'moon' ? stoneSpell.name : shotGear === 'star' ? '星の護符' : starterRing.name)
+  ],offers);
 }
 
 function openTrials() {
@@ -611,7 +767,10 @@ function openShrine(shrine, chapter, optional) {
           if (optional) {
             audio.play('seal');
             optional.success();
-          } else grantStoneReward(shrine);
+          } else {
+            grantStoneReward(shrine);
+            panel('正解・' + shrine.name,[question.answer,question.hint,'獲得　' + stoneRewardLabel(shrine)],[['旅に戻る',resume]]);
+          }
           save();
           return;
         }
@@ -655,6 +814,12 @@ function openShrine(shrine, chapter, optional) {
 function movePlayer(dx, dy, distance) {
   if (interior) return moveInRoom(dx, dy, distance);
   if (!dx && !dy) return;
+  if (isActionBattle()) {
+    player.facing = directionTo(dx,dy,player.facing);
+    const underBoss = battle.body.size >= 4.5 && (pressed('crouch') || dashMotion);
+    moveArena('hero',dx,dy,distance,underBoss ? [] : [enemyBlocker()]);
+    return;
+  }
   const magnitude = Math.hypot(dx, dy);
   player.facing = {x: dx / magnitude, y: dy / magnitude};
   const chapter = chapterOf(player.x);
@@ -757,7 +922,7 @@ function castMagic() {
 }
 
 function swing(charged = false) {
-  if (clock < attackAt) return;
+  if (clock < attackAt || battle?.command) return;
   const weapon = equipped('weapon');
   const burden = Math.max(0, (weapon.weight ?? 5) - level() * .55);
   const interval = (weapon.interval ?? .46) + burden * .045;
@@ -772,16 +937,34 @@ function swing(charged = false) {
   attackAt = clock + interval;
   swingUntil = clock + Math.min(.35, interval * .68);
   swingKind = charged ? 'charged' : finisher ? 'combo' : airborne ? 'air' : level() >= 9 ? 'afterimage' : burden >= 2 ? 'heavy' : 'ground';
-  audio.play(charged || finisher ? 'special' : airborne ? 'air' : 'attack');
+  const sound = charged || finisher ? 'special' : airborne ? 'air' : 'attack';
+  if (isActionBattle()) {
+    const delay = charged ? .145 : burden >= 2 ? .12 : .067;
+    battle.heroStrike = {
+      at:clock+delay, direction:{...player.facing}, reach, width:form.width,
+      technique:charged ? 'charge' : airborne ? 'air' : 'blade', power,sound
+    };
+    swingUntil = Math.max(swingUntil,clock+delay+.13);
+    return;
+  }
+  audio.play(sound);
   const chapter = chapterOf(player.x);
   for (const enemy of activeEnemies(chapter)) {
-    if (!enemy.hp || !unlocked(enemy) || isFinalBoss(enemy)) continue;
+    if (!enemy.hp || !enemyOnField(enemy) || isFinalBoss(enemy)) continue;
     if (aligned(enemy.x, enemy.y, reach, form.width * .75)) hurtEnemy(enemy, power);
     if (paused) break;
   }
   if (!paused) {
     strikePots(reach, 13);
     cutNearbyStageProp(reach,form.width,charged);
+    const stone = stonesByChapter[chapter].find(mark =>
+      !mark.solved && jumpHeight < 32 && aligned(mark.x,mark.row,reach + 10,form.width + 4));
+    if (stone) {
+      sealEffect = {x:stone.x,y:stone.row,until:clock+.9};
+      audio.play('seal');
+      stone.seen = true;
+      openShrine(stone,chapter);
+    }
   }
 }
 
@@ -793,9 +976,10 @@ function dodge() {
 }
 
 function special() {
+  if (isActionBattle()) return actionThinkOfSoso();
   if (clock < specialAt || player.mp < 10) return;
   const targets = activeEnemies(chapterOf(player.x)).filter(enemy =>
-    enemy.hp && unlocked(enemy) && !isFinalBoss(enemy) && Math.hypot(player.x - enemy.x, player.y - enemy.y) <= 105);
+    enemy.hp && enemyOnField(enemy) && !isFinalBoss(enemy) && Math.hypot(player.x - enemy.x, player.y - enemy.y) <= 105);
   if (!targets.length) return say('近くに敵がいない。');
   player.mp -= 10;
   specialAt = clock + 15;
@@ -845,7 +1029,7 @@ function hurtEnemy(enemy, damage) {
     return;
   }
   const oldLevel = level();
-  const reinforcementsDefeated = (battle?.command.foes.length ?? 1) - 1;
+  const reinforcementsDefeated = (battle?.command?.foes.length ?? 1) - 1;
   const xp = (enemy.boss ? 44 : 7) + enemy.chapter * (enemy.boss ? 4 : 2) + reinforcementsDefeated * (4 + enemy.chapter);
   const gold = (enemy.boss ? 32 : 6) + enemy.chapter + reinforcementsDefeated * (3 + Math.floor(enemy.chapter / 2));
   player.xp += xp;
@@ -859,7 +1043,7 @@ function hurtEnemy(enemy, damage) {
     resetJump();
     mode = 'field';
     player.facing = {x: 1, y: 0};
-    fieldSafeUntil = clock + .9;
+    fieldSafeUntil = clock + 1.2;
     swingUntil = clock;
     numbers.splice(0);
     audio.setTrack(fieldTrack());
@@ -878,10 +1062,11 @@ function hurtEnemy(enemy, damage) {
     joined = true;
     cat.x = player.x - 18;
     cat.y = player.y;
+    audio.setTrack('soso');
     panel('第10章クリア・ソソが仲間になった', [
       '「気まぐれで私の膝に乗っただけの猫だと思った」アウレリオは檻の鍵を落とした。「だが、あの力を見て、連れ去ることにした」',
       '世界最強のソソは、一美の足もとでおなかを見せた。けれど空の亀裂を見ると、毛を逆立てて一美の隣に並んだ。',
-      'ソソの行動は戦闘中に選べる。ターンが進むと覚醒し、必殺技で二人の力を合わせられる。'
+      'ソソは戦闘が続くと覚醒する。必殺技で二人の力を合わせよう。'
     ], [['一緒に行こう', resume]]);
   }
   if (enemy.rank === 'major' && enemy.chapter === originalFinal) {
@@ -931,10 +1116,11 @@ function encounter(enemy, approach = 'normal') {
   battleCinema = null;
   flameBolts = [];
   destination = null;
-  clearInput();
+  const action = battleStyle === 'action';
+  clearInput(action);
   resetCat();
   resetJump();
-  battle = createBattle(enemy);
+  battle = action ? createActionBattle(enemy,approach) : createBattle(enemy);
   defeatedFoe = null;
   mode = 'battle';
   player.facing = {x: 1, y: 0};
@@ -944,12 +1130,36 @@ function encounter(enemy, approach = 'normal') {
   audio.play('encounter');
   setEncounterTrack(enemy);
   say('');
-  startCommandBattle(enemy, approach);
+  if (action) startActionBattle(enemy,approach);
+  else startCommandBattle(enemy,approach);
 }
 
 function setEncounterTrack(enemy) {
   audio.setTrack(enemy.trial !== undefined ? 'emperor' + enemy.trial :
     enemy.rank === 'mid' ? 'midboss' : enemy.boss ? 'boss' : 'battle');
+}
+
+function tryEscapeBattle() {
+  if (!battle || isFinalBoss(battle.enemy) || clock < (battle.escapeAt || 0)) return;
+  const {enemy,command} = battle;
+  const slowed = command ? command.allies[0].status?.type === 'chill' : clock < footingUntil;
+  const heroSpeed = 124 + level() * 2;
+  const chance = clamp((enemy.boss ? .33 : .71) + (heroSpeed - enemy.speed * 1.55) * .003 -
+    (slowed ? .21 : 0) - (enemy.trial !== undefined ? .14 : 0),.15,.93);
+  if (Math.random() < chance) return escapeBattle();
+
+  if (menuActive) resume();
+  if (command) {
+    command.plan = [];
+    command.failedEscape = true;
+    startCommandRound();
+    command.log = '逃走失敗！　敵が反撃する。';
+    updateCommandUI();
+  } else {
+    battle.escapeAt = clock + 2.7;
+    battle.next = clock;
+    say('逃走に失敗した！　戦闘を続けよう。',3);
+  }
 }
 
 function escapeBattle() {
@@ -962,6 +1172,8 @@ function escapeBattle() {
   if (!battle) return;
   ({x:player.x, y:player.y} = battle.entry);
   battle = null;
+  clearInput();
+  resetJump();
   resetCat();
   numbers.splice(0);
   fieldSafeUntil = clock + 2.5;
@@ -1013,7 +1225,7 @@ function updateField(dt) {
   }
   audio.setTrack(fieldTrack());
   if (returning && !done && closeTo(25, 104, 14)) return arriveHome();
-  const nearbyNpc = npcs.find(npc => npc.name !== player.party[0] && closeTo(npc.x, 104, 13));
+  const nearbyNpc = npcs.find(npc => !player.party.includes(npc.name) && closeTo(npc.x, 104, 13));
   if (nearbyNpc !== contactNpc) {
     contactNpc = nearbyNpc;
     if (nearbyNpc) {
@@ -1030,7 +1242,7 @@ function updateField(dt) {
   const gem = reachableGem(11);
   if (gem) collectGem(gem);
   for (const enemy of activeEnemies(chapter)) {
-    if (!enemy.hp || !unlocked(enemy) || (returning && !done)) continue;
+    if (!enemy.hp || !enemyOnField(enemy) || (returning && !done)) continue;
     const dx = player.x - enemy.x, dy = player.y - enemy.y;
     const distance = Math.hypot(dx, dy);
     const leash = enemy.boss ? 16 : enemy.optional ? 33 : 42;
@@ -1059,10 +1271,10 @@ function updateField(dt) {
   }
 }
 
-function update(dt) {
+function update(dt, elapsed = dt) {
   if (paused || (mode !== 'field' && mode !== 'battle')) return;
   clock += dt;
-  tickTown(dt);
+  if (battle?.command?.phase !== 'select') tickTown(elapsed * 150);
   if (messageUntil && clock >= messageUntil) {
     messageUntil = 0;
     $('message').textContent = '';
@@ -1073,7 +1285,16 @@ function update(dt) {
     return;
   }
   if (battle) {
-    updateCommandBattle(dt);
+    if (battle.command) updateCommandBattle(dt);
+    else {
+      updateJump(dt);
+      if (movementAllowed()) {
+        if (battle.auto) updateActionAuto(dt);
+        else moveWithInput(dt);
+      }
+      updateFireballs(dt);
+      if (isActionBattle() && !paused) updateActionBattle(dt);
+    }
     return;
   }
   ridePlatform();
@@ -1088,19 +1309,26 @@ function update(dt) {
 }
 
 function updateUI() {
-  $('game').dataset.battle = String(Boolean(battle));
-  $('pause').hidden = Boolean(innScene) || mode === 'title' || mode === 'home';
-  const playing = mode === 'field' || mode === 'battle';
-  const exploring = mode === 'field' && !innScene;
-  $('joystick').hidden = !exploring;
+  $('game').dataset.battle = battle?.command ? 'command' : battle ? 'action' : '';
+  $('pause').hidden = Boolean(innScene || bathScene) || mode === 'title' || mode === 'home';
+  const playing = (mode === 'field' || mode === 'battle') && !bathScene;
+  const exploring = mode === 'field' && !innScene && !bathScene;
+  const action = isActionBattle();
+  $('joystick').hidden = joystick.id === null || !exploring && !action;
   $('joystick').setAttribute('aria-disabled',String(!movementAllowed()));
   $('actions').hidden = !exploring;
-  $('hud').hidden = !playing || Boolean(battle) || Boolean(innScene);
-  $('battle-commands').hidden = !battle;
+  $('hud').hidden = !playing || Boolean(battle?.command) || Boolean(innScene);
+  $('battle-commands').hidden = !battle?.command;
+  $('arena-actions').hidden = !action;
+  $('arena-actions').inert = !movementAllowed();
+  $('arena-status').hidden = !action;
+  if (action) updateActionStatus();
   $('battle-commands').inert = paused;
   $('actions').inert = !movementAllowed();
   attackButton.dataset.charge = String(!bDashUsed && chargeStarted !== null && clock - chargeStarted >= .58);
   updatePlaceTitle();
+  $('town-clock').hidden = mode === 'title';
+  $('town-clock').textContent = townTime();
   $('vitals').textContent = 'HP ' + player.hp + '/' + maxHP() + '　MP ' + player.mp + '/' + maxMP();
   $('field-hp').max = maxHP();
   $('field-hp').value = player.hp;
@@ -1125,3 +1353,9 @@ function updateUI() {
 }
 
 showTitle();
+
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load',() => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+  },{once:true});
+}

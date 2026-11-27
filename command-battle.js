@@ -10,7 +10,6 @@ const turnHeal = (name, power, cost = 0, herb = false) =>
 function startCommandBattle(enemy, approach) {
   const side = approach === 'rear' ? -1 : 1;
   const displayX = value => 320 + side * (value - 320);
-  const member = currentCompanion();
   const actor = (id, name, x, y, stats) => ({
     id, name, x:displayX(x), y, stats, guarding:false, status:null, hitUntil:0
   });
@@ -18,15 +17,17 @@ function startCommandBattle(enemy, approach) {
     unit:player, max:maxHP(), maxMP:maxMP(), atk:attackPower(), def:defense(), speed:124 + level() * 2,
     element:'無', weakness:'闇'
   }))];
-  if (member) {
-    const profile = companionProfiles[member.name];
-    allies.push(actor('ally', member.name, 518, 211, () => ({
+  for (const [index,member] of activeCompanions().entries()) {
+    const profile = companionProfile(member.name);
+    const ally = actor('ally'+index,companionName(member),511+(index%2)*44,205+Math.floor(index/2)*26,() => ({
       unit:member, max:companionHP(member), maxMP:companionMP(member),
       atk:profile.power + companionLevel(member) * 3 + member.gear * 4,
       def:profile.defense + companionLevel(member) + member.gear,
       speed:profile.speed + companionLevel(member) * 2,
-      element:profile.role === 'magic' ? '雷' : '無', weakness:profile.role === 'heal' ? '闇' : '無'
-    })));
+      element:profile.element, weakness:profile.role === 'heal' ? '闇' : '無'
+    }));
+    ally.member = member;
+    allies.push(ally);
   }
   if (joined) allies.push(actor('cat', 'ソソ', 551, 263, () => ({
     unit:cat, max:catForm().hp, maxMP:catForm().mp, atk:catForm().atk, def:catForm().def,
@@ -96,7 +97,7 @@ function commandMoves(actor, group) {
   const catActor = id === 'cat';
   const form = catForm();
   const element = actor.stats().element;
-  const profile = id === 'ally' ? companionProfiles[actor.name] : null;
+  const profile = actor.member ? companionProfile(actor.member.name) : null;
   if (group === 'attack') {
     return [turnAttack(catActor ? form.spell : hero ? equipped('weapon').name : '通常攻撃',
       hero && superAwake ? 1.65 : catActor ? 1.5 : 1, element, 0, catActor && cat.form >= 4 ? 'magic' : 'strike')];
@@ -104,7 +105,9 @@ function commandMoves(actor, group) {
   if (group === 'magic') {
     if (hero) return [
       ...(ring ? [turnAttack('燐光の火球', .35, '炎', starterRing.mp, 'magic', 'burn')] : []),
-      ...(stoneMagicLearned ? [turnHeal(stoneSpell.name, .28, stoneSpell.mp)] : [])
+      ...(stoneMagicLearned ? [turnHeal(stoneSpell.name, .28, stoneSpell.mp)] : []),
+      ...(battle.command.summon ? [] : learnedSummons().map(spirit =>
+        ({name:spirit.name+'を召喚',cost:spirit.cost,motion:'summon',element:spirit.element,spirit,all:true})))
     ];
     if (catActor) return [
       {...turnAttack(cat.form === 5 ? '創世光' : form.spell + 'の加護', 2.15, cat.form ? element : '光',
@@ -146,6 +149,7 @@ function updateCommandUI() {
   tray.hidden = !turn;
   if (!turn) return;
   const {phase, round} = turn;
+  reflectAuto('command-auto',turn.auto);
   const acting = turn.allies[turn.pick];
   const upcoming = phase === 'resolve' ?
     [...(turn.action ? [turn.action] : []), ...turn.queue].map(action => action.actor) :
@@ -202,13 +206,13 @@ function updateCommandUI() {
     if (turn.view === 'main') {
       for (const [group,label] of commandLabels) {
         add(label, () => {
-          if (group === 'escape') return escapeBattle();
+          if (group === 'escape') return tryEscapeBattle();
           if (group === 'guard') return queueCommand(acting, {name:'防御', motion:'guard', cost:0}, acting);
           const moves = commandMoves(acting, group);
           if (moves.length === 1) return selectCommandTarget(turn, moves[0], group);
           turn.view = group;
           updateCommandUI();
-        }, !['guard','escape'].includes(group) && !commandMoves(acting, group).some(move => move.cost <= acting.stats().unit.mp));
+        }, group === 'escape' && isFinalBoss(battle.enemy) || !['guard','escape'].includes(group) && !commandMoves(acting, group).some(move => move.cost <= acting.stats().unit.mp));
       }
       if (turn.plan.length) add('前の仲間', () => {
         const previous = turn.plan.pop();
@@ -262,7 +266,7 @@ function queueCommand(actor, move, target) {
 
 function plannedEnemyActions(turn) {
   const {round, approach} = turn;
-  if (round === 1 && approach === 'first') return [];
+  if (round === 1 && approach === 'first' && !turn.failedEscape) return [];
   const living = turn.allies.filter(commandAlive);
   return turn.foes.filter(commandAlive).map((actor, index) => {
     const target = living[(round - 1 + index) % living.length];
@@ -288,12 +292,13 @@ function nextCommandSelection() {
   const turn = battle.command;
   turn.phase = 'select';
   turn.plan = [];
+  turn.failedEscape = false;
   turn.pick = turn.allies.findIndex(commandAlive);
   turn.view = 'main';
   updateCommandUI();
 }
 
-function shiftCommandCat(form) {
+function shiftCatForm(form) {
   const previous = catForm();
   const next = awakening[form];
   cat.hp = cat.hp > 0 ? Math.max(1,Math.round(cat.hp * next.hp / previous.hp)) : 0;
@@ -306,7 +311,7 @@ function updateCommandAwakening(turn) {
   turn.awakeTurns++;
   const next = awakening[cat.form + 1];
   if (!next || next.turn > turn.awakeTurns) return;
-  shiftCommandCat(cat.form + 1);
+  shiftCatForm(cat.form + 1);
   turn.catGlowUntil = clock + 1.1;
   turn.log = 'ソソが第' + (cat.form + 1) + '形態・' + next.name + 'に覚醒！';
   audio.play('awake' + cat.form);
@@ -336,6 +341,11 @@ function resolveCommand(action) {
   const targets = move.all ? group.filter(commandAlive) : [commandAlive(action.target) ? action.target : group.find(commandAlive)];
   source.unit.mp -= move.cost;
   if (move.herb) player.herbs--;
+  if (move.motion === 'summon') {
+    turn.summon = {spirit:move.spirit,left:3,glow:clock+.9};
+    showSummoning();
+    return;
+  }
   if (move.motion === 'limit') {
     turn.limitReady ??= {};
     turn.limitReady[actor.id] = turn.round + 4;
@@ -372,7 +382,7 @@ function attackCommandTarget(turn, actor, target, move) {
   const weak = move.element !== '無' && (move.element === defend.weakness || move.element === '全');
   const resist = move.element !== '無' && move.element === defend.element && !weak;
   const critical = !magic && Math.random() < .08;
-  const guard = target.guarding ? .37 : 1;
+  const guard = target.guarding ? target.id === 'hero' && shieldEquipped ? .31 : .37 : 1;
   let power = attack.atk * move.power + (move.link && cat.hp ? catForm().atk * 1.9 : 0);
   if (actor.enemy && target.id === 'cat') power *= actor.enemy.trial !== undefined ? 158 : actor.enemy.boss ? 112 : 76;
   const armor = Math.min(power * .55, defend.def * (magic ? .35 : .64));
@@ -408,7 +418,7 @@ function damageCommandActor(turn, target, damage, tag) {
   if (target.id === 'cat' && cat.hp > 0) {
     const next = awakening[cat.form + 1];
     if (!target.guarding && next && turn.awakeTurns + 1 >= next.turn && damage >= max * .12) {
-      shiftCommandCat(0);
+      shiftCatForm(0);
       turn.awakeTurns = 0;
       turn.log = 'ソソの覚醒が中断された。防御や回復で守ろう。';
     }
@@ -422,6 +432,17 @@ function damageCommandActor(turn, target, damage, tag) {
 }
 
 function finishCommandRound(turn) {
+  const summon = turn.summon;
+  if (summon) {
+    const target = turn.foes.find(commandAlive);
+    summon.glow = clock+.55;
+    if (target) damageCommandActor(turn,target,Math.min(spiritPower(summon.spirit),
+      Math.ceil(target.stats().max * (target.enemy.boss ? .13 : 1))),summon.spirit.element);
+    if (summon.spirit.id === 'serpent') player.mp = Math.min(maxMP(),player.mp+2);
+    if (summon.spirit.id === 'shade') player.hp = Math.min(maxHP(),player.hp + Math.ceil(maxHP()*.055));
+    if (summon.spirit.id === 'wolf' && target) target.status = {type:'chill',remaining:2};
+    if (!--summon.left) turn.summon = null;
+  }
   for (const actor of [...turn.allies, ...turn.foes].filter(commandAlive)) {
     if (actor.status?.type === 'burn' && !actor.guarding) {
       const max = actor.stats().max;
@@ -467,6 +488,20 @@ function updateCommandBattle(dt) {
     hurtEnemy(battle.enemy,0);
     return;
   }
+  if (turn.phase === 'select' && turn.auto) {
+    const actor = turn.allies[turn.pick];
+    const stats = actor.stats();
+    const target = turn.foes.find(commandAlive);
+    const wounded = turn.allies.find(member => commandAlive(member) && member.stats().unit.hp < member.stats().max * .44);
+    const heal = wounded && commandMoves(actor,'magic').find(move => move.motion === 'heal' && move.cost <= stats.unit.mp);
+    const danger = plannedEnemyActions(turn).some(intent => intent.target === actor || intent.move.all);
+    if (heal) queueCommand(actor,heal,wounded);
+    else if (danger && actor.member?.tactic === '守備優先') queueCommand(actor,{name:'防御',motion:'guard',cost:0},actor);
+    else if (danger && actor.id === 'cat' && awakening[cat.form+1]?.turn === turn.awakeTurns+1) {
+      queueCommand(actor,{name:'防御',motion:'guard',cost:0},actor);
+    } else queueCommand(actor,commandMoves(actor,'attack')[0],target);
+    return;
+  }
   if (turn.phase !== 'resolve') return;
   if (turn.action) {
     const action = turn.action;
@@ -492,6 +527,6 @@ function updateCommandBattle(dt) {
   turn.delay = .04;
   turn.log = next.actor.name + '　' + next.move.name;
   audio.play({guard:'door',heal:'holy',magic:'magic',leap:'air',strike:'attack',quake:'quake',combo:'attack',
-    limit:next.actor.id === 'cat' ? 'creation' : 'special'}[next.move.motion]);
+    summon:'summon',limit:next.actor.id === 'cat' ? 'creation' : 'special'}[next.move.motion]);
   updateCommandUI();
 }

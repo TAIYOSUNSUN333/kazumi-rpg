@@ -107,8 +107,7 @@ function grantStoneReward(stone) {
   if (kind === 'recover') {
     player.hp = maxHP();
     player.mp = maxMP();
-    const member = currentCompanion();
-    if (member) {
+    for (const member of activeCompanions()) {
       member.hp = companionHP(member);
       member.mp = companionMP(member);
     }
@@ -118,31 +117,6 @@ function grantStoneReward(stone) {
   addNumber(stoneRewardLabel(stone), stone.x, stone.row - 27, '#ffe7a1', true);
   audio.play('stoneReward');
   say('正解！ ' + stoneRewardLabel(stone), 5);
-}
-
-function nearbyStoneInteraction() {
-  const stone = stonesByChapter[chapterOf(player.x)].find(stone =>
-    closeTo(stone.x, stone.row, 54) || stone.reward.chest && stone.rewarded && !stone.claimed &&
-    closeTo(stone.reward.chest.x, stone.reward.chest.row, 54));
-  if (!stone) return null;
-  const chest = stone.reward.chest;
-  if (chest && stone.rewarded && !stone.claimed && closeTo(chest.x, chest.row, 22)) {
-    return {run:() => claimStoneChest(stone)};
-  }
-  return closeTo(stone.x, stone.row, 54) ? {run:() => inspectStone(stone)} : null;
-}
-
-function inspectStone(stone) {
-  destination = null;
-  stone.seen = true;
-  save();
-  const note = stone === shrines[stone.chapter] ? chapters[stone.chapter][1] : prefectures[stone.chapter].town + 'に伝わる旅のクイズ。';
-  const lines = [note];
-  if (stone.solved) lines.push('正解済み');
-  else lines.push('報酬　' + stoneRewardLabel(stone));
-  panel(stone.name, lines, stone.solved ? [['閉じる', resume]] : [
-    ['クイズに挑戦する', () => openShrine(stone, stone.chapter)], ['あとで解く', resume]
-  ]);
 }
 
 function claimStoneChest(stone) {

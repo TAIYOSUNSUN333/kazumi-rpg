@@ -2,6 +2,12 @@
 const townTypes = {
   weapon: ['武器屋', '鍛冶見習い', 9, 19, '#a55f53', '武'],
   armor: ['防具屋', '仕立屋', 10, 20, '#697da1', '防'],
+  clinic: ['病院', '診療係', 7, 22, '#8b9f90', '診'],
+  pharmacy: ['薬屋', '薬師', 8, 20, '#588f72', '薬'],
+  shrine: ['神社', '宮司', 6, 20, '#a36659', '社'],
+  visitor: ['観光案内所', '案内係', 8, 20, '#56859e', '旅'],
+  station: ['駅', '駅員', 7, 22, '#818c9d', '駅'],
+  restaurant: ['レストラン', '給仕', 11, 23, '#bd8065', '食'],
   items: ['道具屋', '薬草商', 8, 21, '#69905b', '薬'],
   inn: ['宿屋', '宿の女将', 0, 24, '#b17b57', '宿'],
   tavern: ['酒場', '酒場の主人', 17, 3, '#8d597f', '酒'],
@@ -43,10 +49,15 @@ const towns = [
   const base = chapter * span;
   const extra = ['inn','food','bath'].filter(kind => !services.includes(kind));
   if ([0,8,17,26,32,46].includes(chapter)) extra.push('magic');
-  const kinds = [...services, ...extra, 'secret'];
-  const sites = kinds.map((kind, i) => ({
-    id: chapter + '-' + kind, chapter, kind, x: base + (kind === 'secret' ? 188 : i < services.length ? [55,100,156,42,121][i] : 235 + (i - services.length) * 47),
-    row: i < 3 ? 56 : 153, upper: i < 3, ...(kind === 'secret' ? {seal:{solved:false}} : {})
+  extra.push(['station','pharmacy','clinic','shrine','visitor','restaurant'][chapter%6]);
+  if (!services.includes('weapon') && !services.includes('armor') && !extra.includes('visitor')) extra.push('visitor');
+  const kinds = [...services,...extra,'secret'];
+  const sites = kinds.map((kind,i) => ({
+    id:chapter + '-' + kind, chapter, kind, x:base + 49 + i*37 + (chapter*11 + i*3)%6,
+    row:59 + (i%2)*8, upper:true,
+    width:kind === 'inn' ? 23 : kind === 'home' ? 16 : 17+(chapter+i*2)%5,
+    height:kind === 'inn' ? 49 : kind === 'home' ? 33 : 36+(chapter*3+i*5)%13,
+    ...(kind === 'secret' ? {seal:{solved:false}} : {})
   }));
   return {name, style, product, meal, resident, chapter, sites};
 });
@@ -81,6 +92,7 @@ function townTime() {
 }
 
 function siteAvailability(site) {
+  if (interior?.site === site) return '';
   const [, , start, end] = townTypes[site.kind];
   if (end === 24) return '';
   if (!['home','ruin','church'].includes(site.kind)) {
@@ -142,9 +154,9 @@ function commuter(town, index = 0) {
   const activity = !daytime ? '帰宅' : hour < 10 ? '買い物' : index === 1 ? (coastal ? '漁の支度' : '畑仕事') : '散策';
   const center = daytime ? [128,191,237][index] : [95,53,149][index];
   const swing = daytime ? 27 + index * 6 : 15;
-  return {x:home + center + Math.sin(townSeconds * (.52 + index * .09) + index) * swing,
-    y:(daytime ? [83,135,114][index] : [131,60,148][index]) + Math.sin(townSeconds * .41 + index) * 5,
-    activity, face:Math.cos(townSeconds * (.52 + index * .09) + index)};
+  return {x:home + center + Math.sin(clock * (.52 + index * .09) + index) * swing,
+    y:(daytime ? [83,135,114][index] : [131,60,148][index]) + Math.sin(clock * .41 + index) * 5,
+    activity, face:Math.cos(clock * (.52 + index * .09) + index)};
 }
 
 function townResident(town) { return commuter(town); }
@@ -375,7 +387,7 @@ function roomCounterReady() {
 }
 
 function shopCounterReady() {
-  return roomCounterReady() && ['weapon','armor','items','store','food','smith','magic'].includes(interior.site.kind) &&
+  return roomCounterReady() && ['weapon','armor','items','store','food','smith','magic','pharmacy'].includes(interior.site.kind) &&
     !siteAvailability(interior.site);
 }
 
@@ -408,7 +420,7 @@ function nearbyFieldAction() {
   const town = towns[chapterOf(player.x)];
   const resident = townResident(town);
   if (closeTo(resident.x,resident.y,27)) return {label:'話す', run:() => residentTalk(town)};
-  const npc = npcs.find(person => person.name !== player.party[0] && closeTo(person.x,104,24));
+  const npc = npcs.find(person => !player.party.includes(person.name) && closeTo(person.x,104,24));
   if (npc) return {label:'話す', run:() => {
     contactNpc = npc;
     npc.visited = true;
@@ -424,7 +436,7 @@ function townInteraction() {
     if (roomCounterReady()) servicePanel();
     return;
   }
-  (nearbyFieldAction() || nearbyStoneInteraction())?.run();
+  nearbyFieldAction()?.run();
 }
 
 function trade(amount, apply, next = servicePanel) {
@@ -502,15 +514,27 @@ function servicePanel(note = '') {
       const type = site.kind;
       const step = player[type] + 1;
       const item = equipment[type][step];
+      services.push(['限定装備を見る',regionalShop]);
       lines.push('品揃え　' + equipment[type].map(entry => entry.name).join('、'));
-      if (item) buy(item.name + 'を装備', item.cost, () => { player[type] = step; if (type === 'armor') stoneArmor = null; if (type === 'weapon') slashBase = null; trialGear[type] = null; regionalGear[type] = null; });
+      if (item) services.push([item.name + '　' + item.cost + 'G',() =>
+        confirmPurchase(site,item.name,item.cost,1,() => {
+          player[type] = step;
+          if (type === 'armor') armorBase = stoneArmor = null;
+          if (type === 'weapon') slashBase = null;
+          trialGear[type] = regionalGear[type] = null;
+        }),player.gold < item.cost]);
       else lines.push('現在の装備より上位の品は売り切れです。');
+      if (type === 'armor' && !shieldOwned) services.push(['木枠の盾　19G',() =>
+        confirmPurchase(site,'木枠の盾（防御時の被ダメージを軽減）',19,1,() => {
+          shieldOwned = shieldEquipped = true;
+        }),player.gold < 19]);
       break;
     }
+    case 'pharmacy':
     case 'items':
     case 'store':
       lines.push(site.kind === 'store' ? '深夜も営業。薬草は通常の約1.6倍です。' : '旅に必要な薬草を取り扱っています。');
-      buy('薬草 ×1', site.kind === 'store' ? 8 : 5, () => { player.herbs++; });
+      services.push(['商品一覧',() => marketStock(site)]);
       if (site.kind === 'store') buy('特製弁当を食べる（HP +28）', 13, () => heal(28));
       break;
     case 'inn': {
@@ -522,6 +546,7 @@ function servicePanel(note = '') {
       services.push(['宿泊する　' + lodging.price + 'G', beginStay, player.gold < lodging.price]);
       break;
     }
+    case 'restaurant':
     case 'food':
       const local = prefectures[site.chapter];
       lines.push('名物は' + local.dish + '。');
@@ -533,10 +558,8 @@ function servicePanel(note = '') {
       buy(town.product + 'の旅用弁当（薬草つき）', 15 + site.chapter, () => { heal(26); player.herbs++; });
       break;
     case 'bath':
-      buy('入浴する（HP +24・MP +8）', 8, () => {
-        heal(24); player.mp = Math.min(maxMP(), player.mp + 8);
-        rememberRegionalBath(site.chapter);
-      });
+      services.push(['入浴する　8G',beginBath,player.gold < 8]);
+      lines.push('受付でタオルを借り、露天風呂で旅の疲れを癒やせます。');
       break;
     case 'tavern':
       services.push(['同行者について相談', tavern]);
@@ -544,6 +567,24 @@ function servicePanel(note = '') {
       break;
     case 'bank':
       services.push(['口座を利用する', bankPanel]);
+      break;
+    case 'clinic':
+      buy('一行の手当て',12+site.chapter,() => {
+        heal(70);
+        footingUntil = clock;
+        for (const member of activeCompanions()) member.hp = companionHP(member);
+      });
+      break;
+    case 'shrine':
+      buy('旅の安全を祈る（MP回復）',5,() => { player.mp = maxMP(); });
+      services.push(['この土地の言い伝え',() => servicePanel(prefectures[site.chapter].festival + 'の灯が旅人を見送ります。')]);
+      break;
+    case 'visitor':
+      services.push(['ご当地装備を扱う売店へ',regionalShop]);
+      services.push(['観光案内を聞く',() => servicePanel(prefectures[site.chapter].sight + 'は' + town.product + 'でも知られています。')]);
+      break;
+    case 'station':
+      services.push(['行き先を選ぶ',() => travelList()]);
       break;
     case 'church':
       buy('祈りを捧げる（HP +45）', 6, () => heal(45));
@@ -597,7 +638,8 @@ function servicePanel(note = '') {
         success:() => {
           player.gold = Math.min(bankLimit, player.gold + 35 + site.chapter * 7);
           player.shards += 2;
-          servicePanel('宝箱から' + (35 + site.chapter * 7) + 'Gと星の欠片2個を見つけた。');
+          const stone = [2,5,8].includes(site.chapter) ? '　魂の契約石も手に入れた。' : '';
+          servicePanel('宝箱から' + (35 + site.chapter * 7) + 'Gと星の欠片2個を見つけた。' + stone);
         },
         later:servicePanel
       }), site.seal.solved]);

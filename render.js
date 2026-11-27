@@ -21,6 +21,7 @@ function portraitBackdrop() {
   if (battle) return picture('arena-' + battle.arena);
   if (mode === 'home') return picture('story-1');
   if (mode === 'title') return picture('land-0');
+  if (bathScene) return picture('inn-1');
   if (innScene) return picture('inn-' + innScene.profile.art);
   return picture(landscapeImage(chapter,Boolean(interior && ['secret','ruin','regional','trailroom'].includes(interior.site.kind))));
 }
@@ -132,8 +133,8 @@ function actionSprite(x,y,scale,face,frame) {
 
 function hero(x, y, scale, face) {
   const moving = gait === 'walk' || gait === 'run';
-  const pose = !player.hp ? 8 : clock < flashUntil ? 5 : clock < swingUntil ? 3 :
-    jumpHeight > 2 ? 2 : pressed('guard') ? 4 : clock < victoryUntil ? 7 :
+  const pose = !player.hp ? 8 : clock < flashUntil ? 5 : clock < swingUntil ? battle?.heroStrike ? 2 : 3 :
+    battle?.spellUntil > clock ? 6 : jumpHeight > 2 ? 2 : (pressed('guard') || battle?.autoGuard) ? 4 : clock < victoryUntil ? 7 :
     moving ? 1 + Math.floor(clock * 10) % 2 : 0;
   const frame = !player.hp || clock < flashUntil || clock < swingUntil ? -1 :
     gait === 'dash' ? 10 : wallKickUntil > clock ? 5 : climbing ? 7 + Math.floor(clock * 9) % 2 :
@@ -143,9 +144,10 @@ function hero(x, y, scale, face) {
     chargeStarted !== null && clock - chargeStarted >= .58 ? 11 :
     gait === 'run' ? Math.floor(clock * 17) % 2 : -1;
   if (frame < 0 || !actionSprite(x,y,scale,face,frame)) drawActor('一美', x, y, scale, face, pose);
-  if (stoneArmor || player.armor || regionalGear.armor !== null || trialGear.armor !== null) {
+  const armor = equipped('armor');
+  if (armor !== equipment.armor[0]) {
     const metal = stoneArmor ? '#dbb878' : regionalGear.armor !== null ? prefectures[regionalGear.armor].color :
-      ['#817967','#b39571','#8eb2b9','#beadd1'][player.armor];
+      ['#817967','#b39571','#8eb2b9','#beadd1'][armorBase ?? player.armor];
     const direction = face < 0 ? -1 : 1;
     if (pose !== 8) {
       polygon([[x - direction * 5 * scale,y - 30 * scale],[x + direction * 4 * scale,y - 33 * scale],
@@ -160,9 +162,17 @@ function drawCompanion(name, x, y, scale, face, motion = 0, hit = false) {
   drawActor(name, x, y, scale, face, pose);
 }
 
+function drawPartyMember(member,x,y,scale,face,pose) {
+  if (member.monster) {
+    const foe = enemies[member.origin];
+    monster(foe,x,y,Math.min(1.04,combatBody(foe).size)*scale,{face,pose});
+  } else drawActor(member.name,x,y,scale,face,pose);
+}
+
 function drawCat(x, y, scale, formIndex = 0) {
   const sheet = picture('soso');
-  const active = battle?.command?.action?.actor.id === 'cat' || battle?.command?.catGlowUntil > clock;
+  const active = battle?.command?.action?.actor.id === 'cat' || battle?.command?.catGlowUntil > clock ||
+    battle?.catEffect?.until > clock;
   const frame = battle && !cat.hp ? 3 : active ? 1 :
     reducedMotion.matches ? 0 : Math.floor(clock * 7) % 3;
   groundShadow(x, y + 2, 10 * scale, 3 * scale);
@@ -235,7 +245,17 @@ function drawHome() {
   hero(405, 278, 1.5, 1);
   if (joined) drawCat(428, 280, 1.25);
 }
-function drawBuilding(site, camera) {
+function drawBuilding(site,camera) {
+  const x = site.x-camera, y = fieldY(site.x,site.row);
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale((site.width || 19)/19,(site.height || 40)/40);
+  ctx.translate(-x,-y);
+  drawBuildingArt(site,camera);
+  ctx.restore();
+}
+
+function drawBuildingArt(site, camera) {
   const town = towns[site.chapter];
   const [name, , , , color, mark] = townTypes[site.kind];
   const x = site.x - camera, door = fieldY(site.x,site.row);
@@ -319,6 +339,10 @@ function drawDoorHint(site,camera) {
     return;
   }
   lightAt(ctx,x,y-9,34,'#ffd48674');
+  const [, , opens, closes] = townTypes[site.kind];
+  if (doorContact === site && clock % 4 < 3.4) {
+    label(closes === 24 ? '24時間' : opens+'〜'+(closes<opens ? '翌':'')+closes+'時',x,y-32,'#ffedbd',10);
+  }
   polygon([[x-5,y-22+pulse],[x+5,y-22+pulse],[x,y-16+pulse]],'#fff2ac');
 }
 
@@ -347,7 +371,7 @@ function drawPlatforms(chapter,camera) {
 function drawTown(chapter, camera) {
   for (const town of towns) {
     if (Math.abs(town.chapter - chapter) > 1) continue;
-    for (const site of town.sites) {
+    for (const site of [...town.sites].sort((a,b)=>a.row-b.row)) {
       if (site.x < camera - 30 || site.x > camera + 665 ||
           site.kind === 'secret' && !(townQuests[site.chapter] > 0)) continue;
       drawBuilding(site,camera);
@@ -457,11 +481,11 @@ function drawRoomDetail(kind, x, y) {
 }
 
 function drawRunningDust(camera = 0) {
-  if (!runDust || clock >= runDust.until || runDust.interior !== interior ||
+  if (!runDust || runDust.arena !== isActionBattle() || clock >= runDust.until || runDust.interior !== interior ||
       artQuality === 'low' || reducedMotion.matches) return;
   const t = 1 - (runDust.until - clock) / .24;
-  const x = interior ? runDust.x : runDust.x - camera;
-  const y = interior ? runDust.y : fieldY(runDust.x,runDust.y);
+  const x = interior || runDust.arena ? runDust.x : runDust.x - camera;
+  const y = runDust.arena ? battleDepth(runDust.y) : interior ? runDust.y : fieldY(runDust.x,runDust.y);
   ctx.save();
   ctx.globalAlpha = .5 * (1 - t);
   ctx.fillStyle = '#e0c59b';
@@ -536,8 +560,9 @@ function drawInterior() {
     label(keeper, 320, 80, '#ffe0a7', 12);
   }
   if (joined) drawCat(clamp(x - 22, 47, 593), y + 3, .8);
-  const companion = currentCompanion();
-  if (companion) drawCompanion(companion.name, clamp(x - 30, 47, 593), y + 8, .9, player.facing.x);
+  for (const [index,member] of activeCompanions().entries()) {
+    drawPartyMember(member,clamp(x-30-index*15,47,593),y+8+(index%2)*10,.9,player.facing.x,gait === 'idle' ? 0 : 1);
+  }
   drawRunningDust();
   hero(x, y-jumpHeight, 1.1, player.facing.x);
 }
@@ -649,6 +674,37 @@ function drawStage(path, camera) {
   }
 }
 
+function drawOpaqueTerrain(chapter,camera) {
+  const terrain = prefectures[chapter].terrain;
+  const colors = {
+    forest:['#55633f','#74704e','#3a493c'], coast:['#af976d','#b49d78','#7b7760'],
+    mountain:['#7f7567','#82795d','#4a5147'], water:['#68684d','#8d8261','#4b5b51'],
+    sand:['#a78355','#c39860','#89623e'], snow:['#c4c9c1','#a5b5b5','#748687'],
+    river:['#6f7d52','#8d8660','#465f4d']
+  }[terrain];
+  const gradient = ctx.createLinearGradient(0,143,0,360);
+  gradient.addColorStop(0,colors[0]); gradient.addColorStop(.38,colors[1]); gradient.addColorStop(1,colors[2]);
+  ctx.save();
+  ctx.beginPath();
+  for (let x=-24;x<=675;x+=17) {
+    const y = fieldY(clamp(camera+x,0,limit),31) + Math.sin((camera+x)*.021)*5;
+    if (x === -24) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.lineTo(675,380); ctx.lineTo(-24,380); ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.clip();
+  const offset = Math.floor(camera/20);
+  for (let col=offset-1;col<offset+34;col++) {
+    for (let row=0;row<7;row++) {
+      const key = (col+322)*19 + row*173 + chapter*113;
+      const x = col*20-camera+(key%17), y = 128+row*34+key%26;
+      rect(x,y,4+key%12,1,key%2 ? '#fae2a546' : '#242d2938');
+    }
+  }
+  ctx.restore();
+}
+
 function drawField(chapter, camera) {
   const [ground, leaf] = palettes[chapter] || ['#354b50', prefectures[chapter].color];
   const light = ctx.createLinearGradient(0, 0, 0, 360);
@@ -671,6 +727,7 @@ function drawField(chapter, camera) {
   }
   ctx.save();
   ctx.translate(0,-fieldCameraY);
+  drawOpaqueTerrain(chapter,camera);
   const layout = fieldLayouts[chapter], season = seasonIndex();
   const ridge = [];
   for (let x = -15; x <= 670; x += 19) {
@@ -774,7 +831,7 @@ function drawField(chapter, camera) {
     if (gem.on && Math.abs(gem.x - player.x) < 640) diamond(gem.x - camera, fieldY(gem.x,gem.row) - 7, 6, 9, '#ffe5a0');
   }
   for (const npc of npcs) {
-    if (npc.name === player.party[0] || Math.abs(npc.x - player.x) > 640) continue;
+    if (player.party.includes(npc.name) || Math.abs(npc.x - player.x) > 640) continue;
     drawCompanion(npc.name, npc.x - camera, fieldY(npc.x,104), .8, 1);
     label(npc.name, npc.x - camera, fieldY(npc.x,104) - 34);
   }
@@ -783,7 +840,7 @@ function drawField(chapter, camera) {
     drawWaysideStone(stone,camera);
   }
   for (const enemy of activeEnemies(chapter)) {
-    if (!enemy.hp || !unlocked(enemy)) continue;
+    if (!enemy.hp || !enemyOnField(enemy)) continue;
     const x = enemy.x - camera, y = fieldY(enemy.x,enemy.y);
     monster(enemy, x, y, Math.min(1.38, combatBody(enemy).size * .73));
     rect(x - 12, y - 31, 24, 3, '#35203a');
@@ -802,9 +859,13 @@ function drawField(chapter, camera) {
     }
   }
   const x = player.x - camera, y = fieldY(player.x,player.y) - jumpHeight;
-  const member = currentCompanion();
-  if (member) drawCompanion(member.name, companionTrail.x - camera, fieldY(companionTrail.x,companionTrail.y) - (companionTrail.height ?? 0), .9,
-    Math.sign(player.x - companionTrail.x), Math.sin(clock * 15) * 1.8);
+  const followers = activeCompanions().map((member,index) => ({member,trail:partyTrail(member.name,index)}))
+    .sort((a,b)=>a.trail.y-b.trail.y);
+  for (const {member,trail} of followers) {
+    drawPartyMember(member,trail.x-camera,fieldY(trail.x,trail.y)-(trail.height || 0),.9,
+      Math.sign(player.x-trail.x) || player.facing.x,trail.height > 4 ? 2 :
+      gait === 'idle' ? 0 : 1+Math.floor(clock*9)%2);
+  }
   if (joined) drawCat(cat.x - camera, fieldY(cat.x,cat.y), .8);
   if (jumpHeight) rect(x - 7, fieldY(player.x,player.y) + 2, 14, 3, '#292735');
   if (clock < swingUntil && swingKind === 'afterimage' && !reducedMotion.matches) {
@@ -981,8 +1042,13 @@ function drawBattle() {
     } else {
       if (actor.id === 'hero' && turn.superAwake) lightAt(ctx,x,y-25,57,'#ffe67091');
       groundShadow(x,y,12,4);
-      drawActor(actor.name,x,y-jump,scale,face,pose);
+      if (actor.member) drawPartyMember(actor.member,x,y-jump,scale,face,pose);
+      else drawActor(actor.name,x,y-jump,scale,face,pose);
     }
+  }
+  if (turn.summon) {
+    const leader = turn.allies[0];
+    drawSummon(turn.summon.spirit,leader.x+turn.side*48,leader.y-27,1.12,turn.summon.glow>clock);
   }
   drawCommandEffect(turn.action,positions);
   for (const number of numbers) {
@@ -991,14 +1057,14 @@ function drawBattle() {
   ctx.restore();
 }
 
-function drawFireballs(camera) {
+function drawFireballs(camera, arena = false) {
   if (!flameBolts.length) return;
   ctx.save();
   for (const bolt of flameBolts) {
-    if (bolt.chapter !== chapterOf(player.x)) continue;
+    if (Boolean(bolt.arena) !== arena || bolt.chapter !== chapterOf(player.x)) continue;
     const x = bolt.x - camera;
-    const y = fieldY(bolt.x,bolt.y) - 19 - bolt.height * .54;
-    lightAt(ctx,x,y,28,'#ff7631a0');
+    const y = (arena ? battleDepth(bolt.y) : fieldY(bolt.x,bolt.y)) - 19 - bolt.height * .54;
+    lightAt(ctx,x,y,28,(bolt.tint || '#ff7631') + 'a0');
     const dx=bolt.direction.x, dy=bolt.direction.y*.68;
     polygon([[x-dx*20,y-dy*20],[x-dx*9+dy*7,y-dy*9-dx*7],[x+dx*7,y+dy*7],[x-dx*9-dy*7,y-dy*9+dx*7]],'#f38340c7');
     diamond(x,y,7,6,'#ffe5a5');
@@ -1018,7 +1084,7 @@ function drawWaysideStone(stone, camera) {
   rect(x-12,y-5,25,6,gold ? '#aa7f46' : '#4c4d65');
   diamond(x,y-21,4,7,gold ? '#fff0a4' : close ? '#d6ebff' : '#939fbc');
   for (let row = 0; row < 2; row++) rect(x-4,y-12+row*3,8,1,gold ? '#fbe7a8' : '#b7bdd4');
-  if (close) label(gold ? '正解済み' : '石碑',x,y-42,gold ? '#fff0aa' : '#e1edff',12);
+  if (close) label(gold ? '正解済み' : '剣で調べる',x,y-42,gold ? '#fff0aa' : '#e1edff',12);
   const chest = stone.reward.chest;
   if (!chest || !stone.rewarded || stone.claimed) return;
   const cx = chest.x - camera, cy = fieldY(chest.x,chest.row);
@@ -1043,21 +1109,24 @@ canvas.addEventListener('click', event => {
       claimStoneChest(stone);
       return;
     }
-    if (closeTo(stone.x,stone.row,54) && Math.abs(stone.x - x) <= 17 &&
-        Math.abs(fieldY(stone.x,stone.row) - 18 - y) <= 24) {
-      inspectStone(stone);
-      return;
-    }
+
   }
 });
 
 function renderScene() {
+  if (bathScene) return drawBathStay();
   if (innScene) return drawInnStay();
   if (interior && mode === 'field') return drawInterior();
   const chapter = chapterOf(player.x);
   const camera = fieldCamera;
   if (mode === 'title' || mode === 'home') drawHome();
-  else if (battle) drawBattle();
+  else if (battle) {
+    if (battle.command) drawBattle();
+    else {
+      drawArenaBackdrop(battle.arena,battle.enemy.chapter);
+      drawActionBattle();
+    }
+  }
   else drawField(chapter,camera);
   if (mode === 'field') ctx.translate(0,-fieldCameraY);
   drawFireballs(camera);
@@ -1106,13 +1175,15 @@ let previousFrame = null;
 let lastUI = 0;
 let lastDraw = -Infinity;
 function frame(timestamp) {
-  const elapsed = previousFrame === null ? 0 : Math.min((timestamp - previousFrame) / 1000, .05);
+  const realTime = previousFrame === null ? 0 : Math.min((timestamp-previousFrame)/1000,.5);
+  const elapsed = Math.min(realTime,.05);
   previousFrame = timestamp;
   const moment = cinemaMoment();
-  const timeScale = moment?.kind === 'impact' && moment.progress < .38 ? .52 : 1;
+  const timeScale = battle?.hitStop > timestamp ? .20 : moment?.kind === 'impact' && moment.progress < .38 ? .52 : 1;
   if (!document.hidden) {
-    update(elapsed * timeScale);
+    update(elapsed*timeScale,realTime);
     advanceInn(elapsed);
+    advanceBath(elapsed);
     const lookAhead = (player.facing.x || 0) * (gait === 'run' || gait === 'dash' ? 33 : 12);
     const target = clamp(player.x - 265 + lookAhead,-85,limit - 515);
     const aimY = mode === 'field' && !interior ? -Math.min(24, jumpHeight * .32) : 0;
@@ -1134,6 +1205,7 @@ function frame(timestamp) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+document.addEventListener('visibilitychange',() => { previousFrame = null; });
 
 function seatedAtInn(name, x, y, facing) {
   const actor = picture('actors');
@@ -1228,11 +1300,11 @@ function drawInnStay() {
       if (ally) seatedAtInn(ally.name,472,210,-1);
     } else {
       drawActor('一美',335,y,1.13,1,pose);
-      if (ally) drawActor(ally.name,472,y,1.02,-1,pose);
+      if (ally) drawPartyMember(ally,scene.choice?.[3] === 'share' && tired ? 362 : 472,y,1.02,-1,pose);
     }
     if (tired) {
       rect(322,195,30,14,'#a76578');
-      if (ally) rect(459,195,30,14,'#a76578');
+      if (ally && scene.choice?.[3] !== 'share') rect(459,195,30,14,'#a76578');
     }
     if (joined) {
       const catTime = sleep ? 0 : Math.floor(t*5)%3;

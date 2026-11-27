@@ -6,6 +6,7 @@ with sync_playwright() as pw:
   page=browser.new_page(viewport={'width':844,'height':390},has_touch=True,is_mobile=True)
   errors=[]
   page.on('pageerror',lambda e:errors.append(str(e)))
+  page.add_init_script("localStorage.setItem('kazumi-battle-style', JSON.stringify('command'))")
   page.goto(os.getenv('KAZUMI_TEST_URL', 'http://127.0.0.1:3009/'))
   buttons=lambda n: page.get_by_role('button',name=n,exact=True)
   buttons('はじめから').tap()
@@ -67,6 +68,7 @@ with sync_playwright() as pw:
   buttons('炎帝フェルナンド').tap()
   page.wait_for_function("battle.command.phase==='select'")
   assert page.evaluate('battle.enemy.trial===0 && done && cat.form===0')
+  page.evaluate('Math.random=()=>0')
   buttons('逃げる').tap()
   assert page.evaluate('!battle && done')
   browser.close()

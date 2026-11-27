@@ -135,7 +135,7 @@ function tourPanel(note = '') {
       townSeconds = start;
     }), festival || entry.festival],
     ['ご当地メダルを受け取る', () => tourChange(() => { entry.medal = true; }), !medalReady(entry) || entry.medal],
-    ['限定装備を買う・使う', regionalShop],
+    ['限定装備の取扱店を調べる', () => tourPanel('限定装備は街の武器屋・防具屋または観光案内所で扱っています。')],
     [region.dungeon + 'へ', () => {
       interior = {site:townSites.get('regional-' + chapter), x:320, y:274};
       entry.dungeon = true;
@@ -164,16 +164,18 @@ function townDish(cost) {
 }
 
 function regionalShop() {
+  if (!interior || !['weapon','armor','visitor'].includes(interior.site.kind) || !roomCounterReady()) return;
   const chapter = chapterOf(player.x);
   const region = prefectures[chapter];
   const entry = tourismFor(chapter);
-  const buttons = [['戻る', tourPanel]];
+  const buttons = [['戻る', servicePanel]];
   for (const type of ['weapon','armor']) {
+    if (interior.site.kind !== 'visitor' && interior.site.kind !== type) continue;
     const item = region[type];
     const price = (type === 'weapon' ? 32 : 27) + chapter * 3;
     const equip = () => {
       regionalGear[type] = chapter;
-      if (type === 'armor') stoneArmor = null;
+      if (type === 'armor') armorBase = stoneArmor = null;
       if (type === 'weapon') slashBase = null;
       trialGear[type] = null;
     };

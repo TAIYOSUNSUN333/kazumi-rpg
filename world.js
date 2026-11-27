@@ -29,12 +29,30 @@ const chapters = [
 ];
 
 const originalFinal = chapters.length - 1;
-for (const region of prefectures.slice(chapters.length)) {
+const secondJourney = [
+  '梅の木の根元で、若草山で止めたはずの振動が聞こえる。', '杉並木に、影だけが先へ歩く旅人がいる。',
+  '湯畑の湯気の中で、ソソが遠い昔の鈴の音に耳を立てた。', '蔵の帳面に、異変が起こる前の地脈の記録が残されている。',
+  '浜の漁師は、月明かりのない晩にも白く光る波を見たという。', '隅田川の水面で、閉じたはずの亀裂が星を飲み込んでいる。',
+  '大仏へ向かう石段で、ソソが割れた星片をくわえてきた。', '雪壁の道に足跡がふた筋ある。一筋は一美より先へ続いていた。',
+  '庭の水路に薄い金箔が流れ、地脈の継ぎ目を指し示す。', '断崖に立つと、奇妙に遅れて波の音が返ってきた。',
+  '葡萄棚の向こうで、空と谷の稜線がわずかに食い違っている。', '雪の屋根を渡る黒い影が、ソソに向かって頭を下げた。',
+  '地図職人が、城の地下に眠る水路を調べてほしいと頼みに来た。', '夫婦岩の間で、夕日と月が同じ光を落としている。',
+  '湖畔で拾った鈴は、ソソが近づいたときだけ鳴る。', '竹の葉が風上へ流れる。山の奥から、忘れられた祈りが聞こえる。',
+  '堀の橋が映すのは今夜の街ではなく、まだ来ていない朝だ。', '白壁の城門で、古い守り手から旅の続きを託された。',
+  '熊野の石段に置かれた灯明が、祭りの日の行列とは別の方角を照らす。', '湖の潮が止まった。しじみを採る人たちは岸で水の音を待っている。',
+  '白い壁に星の欠片を当てると、首里まで続く線が現れた。', '潮が引く大鳥居の下で、地脈をつなぐ最後の鍵の名前を聞いた。',
+  '草原の裂け目から石灰の粉が舞い上がる。ソソは地底のうなりに気づいた。', '渦の中心に空の裂け目が映り、流れに逆らって動いている。',
+  '池を渡る鳥の群れが、一本の青い線に沿って飛び去った。', '湯の街の夜、宿の窓に十年前の月が浮かんだ。',
+  '四万十の橋を渡っていると、向こう岸でソソを呼ぶ声がした。', '天満宮の木の下で、星の欠片は何かに応えるように光る。',
+  '窯に火を入れた職人が、焼き上がりに見知らぬ紋様を見つけた。', '港を見下ろす坂で、海の向こうの灯台がこちらに合図を送った。',
+  '火口を回る影の足音が、地上の足跡より先に聞こえる。', '立ちのぼる湯気が巻き戻り、白い糸をたどるように山へ戻っていく。',
+  '峡谷に届いた夜神楽の音を聞くと、ソソの目に星が宿った。', '火山灰の下で眠っていた地脈が、南の島へ光を送る。',
+  '各地をつなぎ直した光が、首里の石垣の下で一本の道になる。'
+];
+for (const [index,region] of prefectures.slice(chapters.length).entries()) {
   const final = region.name === '沖縄県';
-  chapterInfo.push([region.town, final ? '星蝕の継承者レグルス' : region.companion + 'の地脈を守る番人']);
-  chapters.push([final ? '各地の地脈が首里の石垣に集まる。ソソと力を合わせて旅を締めくくろう。' :
-    region.sight + 'を望む街で、' + region.specialty + 'を運ぶ旅人が地脈の異変について語った。',
-    region.dungeon + 'の方角から、地脈が澄んだ音を返した。']);
+  chapterInfo.push([region.town,final ? '星蝕の継承者レグルス' : region.companion + 'の地脈を守る番人']);
+  chapters.push([secondJourney[index],region.sight + 'の先へ続く道から、地脈が澄んだ音を返した。']);
 }
 const span = 960;
 const last = chapters.length - 1;
@@ -110,7 +128,8 @@ const enemies = chapters.flatMap((_, chapter) => [205, 260, 400, 525, 610, 720, 
   return {
     ...kind, variant, name: rank === 'major' ? chapterInfo[chapter][1] : rank === 'mid' ? midBosses[chapter] : kind.name,
     power: kind.power + Math.min(chapter, 11) * 2 + Math.floor(Math.max(0, chapter - 11) * .58) + (boss ? 5 : 0), max, hp: max,
-    homeX, homeY, x: homeX, y: homeY, chapter, slot, boss, rank, optional, flash: 0
+    homeX, homeY, x: homeX, y: homeY, chapter, slot, boss, rank, optional,
+    nightOnly:slot === 1 && chapter%3 === 1, flash:0
   };
 }));
 

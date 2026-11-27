@@ -1,5 +1,13 @@
 // Original looping scores. Notes are MIDI pitches; each measure has eight steps.
 const scores = {
+  forest:[90,'oboe',[48,55,45,53],[60,67,null,71,72,71,67,64]],
+  coast:[106,'flute',[52,55,47,50],[64,67,71,76,71,69,66,64]],
+  snow:[74,'harp',[45,48,41,43],[69,null,72,76,null,75,71,67]],
+  tavern:[103,'guitar',[48,53,47,43],[60,64,67,72,67,69,65,62]],
+  soso:[91,'piano',[53,48,50,55],[65,69,74,72,67,69,65,62]],
+  bath:[65,'harp',[48,51,46,53],[67,70,null,72,75,72,null,65]],
+  romance:[68,'piano',[50,47,43,45],[62,66,69,74,73,69,67,66]],
+  ending:[76,'piano',[48,45,41,43],[72,76,79,84,81,79,76,74]],
   loss: [45, 'piano', [45, 41, 38, 40], [69, null, 64, null, 62, null, 57, null]],
   title: [102, 'strings', [50, 46, 53, 48], [62, 69, 74, 77, 76, 74, 69, 65]],
   home: [78, 'piano', [48, 45, 41, 43], [60, 64, 67, 72, 67, 64, 62, 64]],
@@ -40,7 +48,7 @@ for (let index = townMelodies.length; index < prefectures.length; index++) {
     [root, root + 5, root - 2, root + 2], melody];
 }
 const effects = {
-  quake:[35,29], step:[41], door:[61,66,73],
+  purchase:[65,69,74], summon:[45,57,62,69,74,81,86], water:[78,82,74], quake:[35,29], step:[41], door:[61,66,73],
   seal: [55, 60, 64, 67, 72, 79],
   stoneReward: [62, 66, 69, 74, 78, 81, 86],
   jump: [55, 62], air: [74, 62, 55], magic: [67, 74, 81], pot: [48, 58, 44],

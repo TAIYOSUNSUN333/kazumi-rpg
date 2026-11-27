@@ -22,7 +22,8 @@ const featureCache = [];
 const roofCache = new WeakMap();
 
 function movementAllowed() {
-  return !paused && mode === 'field' && !doorTransition && !innScene;
+  return !paused && !doorTransition && !innScene &&
+    (mode === 'field' || isActionBattle() && battle.age >= .36 && player.hp > 0 && (!joined || cat.hp > 0));
 }
 
 function playableInput() {
@@ -50,7 +51,8 @@ function motionFeatures(chapter) {
 
 function roofSurface(site) {
   if (!roofCache.has(site)) roofCache.set(site,{
-    x:site.x,y:site.upper ? 41.5 : 167,width:18,depth:site.upper ? 9.5 : 8,height:roofHeight,site
+    x:site.x,y:site.upper ? site.row-14.5 : site.row+14,
+    width:site.width || 18,depth:site.upper ? 9.5 : 8,height:site.height || roofHeight,site
   });
   return roofCache.get(site);
 }
@@ -71,7 +73,7 @@ function surfacesAt(x,y) {
 function nearbyLadder() {
   if (interior || battle) return null;
   const site = towns[chapterOf(player.x)].sites.find(site => site.kind !== 'secret' &&
-    Math.abs(player.x - (site.x + 15)) <= 7 && Math.abs(player.y - (site.upper ? 47 : 163)) <= 15);
+    Math.abs(player.x - (site.x + 15)) <= 7 && Math.abs(player.y - (site.upper ? site.row-9 : site.row+10)) <= 15);
   return site ? roofSurface(site) : null;
 }
 
@@ -200,11 +202,11 @@ function moveWithInput(dt) {
     if (runBlend > .44 && clock >= stepAt && jumpHeight <= floorUnderHero() + 4) {
       stepAt = clock + .24;
       audio.play('step');
-      const spot = interior || player;
-      runDust = {x:spot.x,y:spot.y,interior,until:clock + .24};
+      const spot = isActionBattle() ? actorPoint('hero') : interior || player;
+      runDust = {x:spot.x,y:spot.y,interior,arena:isActionBattle(),until:clock + .24};
     }
     const trap = stagePaths[chapterOf(player.x)].trap;
-    const onTrap = !interior && jumpHeight < 7 && atFootprint(player.x,player.y,trap);
+    const onTrap = !interior && !battle && jumpHeight < 7 && atFootprint(player.x,player.y,trap);
     const terrainPace = onTrap && trap.kind === 'quicksand' ? .44 : onTrap && trap.kind === 'ice' ? 1.23 : 1;
     const modifier = terrainPace * (clock < footingUntil ? .82 : 1) * (pressed('guard') ? .72 : 1) * (pressed('crouch') ? .51 : 1);
     gait = pressed('crouch') ? 'crouch' : runBlend > .4 ? 'run' : 'walk';
@@ -316,16 +318,17 @@ function useShot() {
   } else special();
 }
 
-function launchFireball(damage) {
-  const origin = player;
+function launchFireball(damage, tint) {
+  const arena = isActionBattle() ? battle : null;
+  const origin = arena ? actorPoint('hero') : player;
   const direction = {...player.facing};
   flameBolts.push({x:origin.x + direction.x * 9,y:origin.y + direction.y * 9,direction,damage,
-    height:Math.max(0,jumpHeight), distance:0, chapter:chapterOf(player.x)});
+    height:Math.max(0,jumpHeight), tint, arena, distance:0, chapter:chapterOf(player.x)});
 }
 
 function updateFireballs(dt) {
   flameBolts = flameBolts.filter(bolt => {
-    if (interior || bolt.chapter !== chapterOf(player.x)) return false;
+    if (interior || bolt.arena !== battle || bolt.chapter !== chapterOf(player.x)) return false;
     const step = Math.min(dt * 320,starterRing.reach - bolt.distance);
     if (step <= 0) return false;
     const {x,y} = bolt;
@@ -334,16 +337,24 @@ function updateFireballs(dt) {
       const progress = clamp((tx-x)*dx + (ty-y)*dy,0,step);
       return Math.hypot(tx - x - dx * progress,ty - y - dy * progress) <= radius;
     };
-    const enemy = activeEnemies(bolt.chapter).find(foe =>
-      foe.hp && unlocked(foe) && !isFinalBoss(foe) && hits(foe.x,foe.y,13));
-    if (enemy) {
-      hurtEnemy(enemy,bolt.damage);
-      return false;
-    }
-    const pot = pots.slice(bolt.chapter * 3,bolt.chapter * 3 + 3).find(box => !box.broken && hits(box.x,box.y,10));
-    if (pot) {
-      breakPot(pot);
-      return false;
+    if (bolt.arena) {
+      if (hits(battle.enemyX,battle.enemyY,battle.body.radius + 8)) {
+        battle.heroPressure = clock + 1.35;
+        positionalHit({x:x - dx * 14,y:y - dy * 14},bolt.damage,'magic');
+        return false;
+      }
+    } else {
+      const enemy = activeEnemies(bolt.chapter).find(foe =>
+        foe.hp && enemyOnField(foe) && !isFinalBoss(foe) && hits(foe.x,foe.y,13));
+      if (enemy) {
+        hurtEnemy(enemy,bolt.damage);
+        return false;
+      }
+      const pot = pots.slice(bolt.chapter * 3,bolt.chapter * 3 + 3).find(box => !box.broken && hits(box.x,box.y,10));
+      if (pot) {
+        breakPot(pot);
+        return false;
+      }
     }
     bolt.x += dx * step;
     bolt.y += dy * step;

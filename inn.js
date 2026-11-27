@@ -42,6 +42,11 @@ function tonightConversation(scene) {
     line:member.name + '「見て。この窓からなら、' + prefectures[scene.site.chapter].sight + 'の明かりが見えるよ」',
     choices:[['窓辺で星を見る','二人でしばらく星を眺めた。',4],['明日に備えて休む','明日の道を確認した。',1]]
   };
+  if (member.affinity >= 38 && (member.trust || 0) >= 14 && companionProfile(member.name).fit >= 10) return {
+    line:companionName(member)+'「部屋が冷えてきたね。よかったら同じ掛け布団で眠らない？」',
+    choices:[['一緒に休む','二人で掛け布団を分け合い、安心して眠った。',4,'share'],
+      ['それぞれの寝台で休む','それぞれの寝台で、ゆっくり休むことにした。',1]]
+  };
   if (member.affinity >= 16 && member.name === '一郎' && n % 2 === 0) return {
     line:'一郎「君といると、旅が終わってもまた会いたいと思う。手をつないでもいい？」',
     choices:[['手をつなぐ','同意して手をつなぎ、互いの気持ちを伝えた。',5],['今は友達として話す','一郎は気持ちを尊重して、明日の旅の話に戻った。',1]]
@@ -85,6 +90,7 @@ function resumeInn() {
   clearInput();
   $('panel').hidden = true;
   $('stay-controls').hidden = false;
+  $('stay-skip').textContent = '宿泊演出をスキップ';
   audio.unlock();
   advanceInn(0);
 }
@@ -98,7 +104,7 @@ function advanceInn(dt) {
   if (stageIndex === scene.stage) return;
   scene.stage = stageIndex;
   const beat = innStages[stageIndex];
-  audio.setTrack(beat.track);
+  audio.setTrack(stageIndex === 3 && scene.conversation.line.startsWith('一郎「君と') ? 'romance' : beat.track);
   $('stay-caption').textContent = stageIndex === 3 ? scene.choice?.[1] || scene.conversation.line : beat.label;
   $('stay-choices').replaceChildren();
   if (stageIndex === 3 && !scene.choice && scene.conversation.choices) {
@@ -131,6 +137,10 @@ function finishStay() {
     player.mp = maxMP();
   }
   if (profile.cure) footingUntil = clock;
+  for (const guest of activeCompanions().slice(1)) {
+    guest.hp = profile.modest ? Math.min(companionHP(guest),guest.hp+38) : companionHP(guest);
+    guest.mp = profile.modest ? Math.min(companionMP(guest),guest.mp+18) : companionMP(guest);
+  }
   if (profile.blessing) innBuffUntil = townSeconds + 3600;
   const member = currentCompanion();
   const departed = member && choice?.[3] === 'depart';
@@ -139,13 +149,14 @@ function finishStay() {
     player.gold = 0;
     member.affinity = -100;
     remember(member,'喧嘩別れ');
-    player.party = [];
+    player.party = player.party.filter(name => name !== member.name);
   } else if (member) {
     member.hp = profile.modest ? Math.min(companionHP(member), member.hp + 38) : companionHP(member);
     member.mp = profile.modest ? Math.min(companionMP(member), member.mp + 18) : companionMP(member);
     if (choice) {
       remember(member, choice[1]);
       member.affinity = clamp(member.affinity + choice[2],-100,100);
+      member.trust = clamp((member.trust || 0)+choice[2],-100,100);
     }
     regionalInnTalk(site.chapter);
   }
@@ -165,4 +176,4 @@ function finishStay() {
   ], [['手紙をしまう',resume]]);
 }
 
-document.getElementById('stay-skip').onclick = finishStay;
+document.getElementById('stay-skip').onclick = () => bathScene ? finishBath() : finishStay();

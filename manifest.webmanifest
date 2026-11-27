@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "一美のスター街道",
+  "short_name": "一美のスター街道",
+  "lang": "ja",
+  "description": "一美とソソの、47都道府県を巡る冒険",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#151526",
+  "theme_color": "#151526",
+  "icons": [
+    { "src": "assets/portrait-0.webp", "sizes": "300x300", "type": "image/webp", "purpose": "any" },
+    { "src": "assets/story-0.webp", "sizes": "576x576", "type": "image/webp", "purpose": "any" }
+  ]
+}

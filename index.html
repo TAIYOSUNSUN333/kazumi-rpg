@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#151526">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/portrait-0.webp">
   <title>一美のスター街道</title>
   <link rel="stylesheet" href="game.css">
   <script defer src="prefectures.js"></script>
@@ -16,12 +18,17 @@
   <script defer src="tourism.js"></script>
   <script defer src="graphics.js"></script>
   <script defer src="battlefield.js"></script>
+  <script defer src="bath.js"></script>
   <script defer src="inn.js"></script>
   <script defer src="terrain.js"></script>
   <script defer src="stages.js"></script>
   <script defer src="movement.js"></script>
   <script defer src="command-battle.js"></script>
+  <script defer src="action-battle.js"></script>
+  <script defer src="summons.js"></script>
+  <script defer src="market.js"></script>
   <script defer src="game.js"></script>
+  <script defer src="action-render.js"></script>
   <script defer src="render.js"></script>
 </head>
 <body>
@@ -32,10 +39,11 @@
       <progress id="field-hp" aria-label="一美のHP"></progress>
       <progress id="field-mp" aria-label="一美のMP"></progress>
     </header>
+    <div id="town-clock" aria-label="ゲーム内時刻" hidden></div>
     <p id="message" role="status" aria-live="polite"></p>
     <div id="place-title" role="status" hidden></div>
     <nav id="menu" aria-label="メニュー">
-      <button id="pause" aria-label="メニュー" hidden>
+      <button id="pause" aria-label="メニュー" aria-controls="panel" aria-expanded="false" hidden>
         <svg aria-hidden="true" viewBox="0 0 36 36"><path d="M8 10h20M8 18h20M8 26h20"/><path d="M5 18l2-2 2 2-2 2Zm22 0 2-2 2 2-2 2Z"/></svg>
       </button>
     </nav>
@@ -54,8 +62,27 @@
         <svg class="cooldown-ring" aria-hidden="true" viewBox="0 0 68 68"><circle cx="34" cy="34" r="31" pathLength="100"/></svg>
       </button>
     </nav>
+    <section id="arena-status" aria-label="戦況" hidden>
+      <div id="arena-enemy"></div>
+      <progress id="arena-enemy-hp" aria-label="敵のHP"></progress>
+      <div id="arena-party"></div>
+      <div id="arena-awake" hidden><span id="arena-cat"></span>
+        <progress id="arena-awake-gauge" aria-label="ソソの覚醒ゲージ"></progress>
+      </div>
+      <div id="arena-warning" role="status"></div>
+    </section>
+    <nav id="arena-actions" aria-label="アクション戦闘" hidden>
+      <button id="arena-auto" aria-pressed="false">AUTO</button>
+      <button data-hold="guard" id="arena-guard">防御</button>
+      <button data-hold="battle-magic" id="arena-magic">魔法</button>
+      <button data-hold="limit" id="arena-limit">必殺技</button>
+      <button data-hold="attack" id="arena-attack">攻撃</button>
+      <button data-hold="dodge" id="arena-dodge">回避</button>
+      <button data-hold="herb" id="arena-herb">薬草</button>
+      <button data-hold="think" id="arena-think" aria-label="ソソを思う"><span>ソソを思う</span><small id="arena-think-wait"></small></button>
+    </nav>
     <section id="battle-commands" aria-label="戦闘コマンド" hidden>
-      <div id="battle-timeline"><strong id="battle-round"></strong><span id="battle-order"></span></div>
+      <div id="battle-timeline"><button id="command-auto" aria-pressed="false">AUTO</button><strong id="battle-round"></strong><span id="battle-order"></span></div>
       <div id="battle-party"></div>
       <div id="battle-intent" hidden></div>
       <div id="battle-awakening" hidden><span id="battle-awakening-text"></span><progress id="battle-awakening-gauge" aria-label="ソソの覚醒ゲージ"></progress></div>
@@ -63,8 +90,10 @@
       <div id="battle-options"></div>
     </section>
     <section id="panel" aria-labelledby="panel-title">
-      <h1 id="panel-title">一美のスター街道</h1>
-      <div id="panel-body"></div>
+      <div id="panel-content">
+        <h1 id="panel-title">一美のスター街道</h1>
+        <div id="panel-body"></div>
+      </div>
       <div id="panel-buttons"></div>
     </section>
     <aside id="stay-controls" hidden aria-label="宿泊">
