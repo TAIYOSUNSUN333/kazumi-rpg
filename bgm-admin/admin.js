@@ -1,7 +1,6 @@
 const $ = id => document.getElementById(id);
 const api = '/.netlify/functions/bgm-admin';
 const maxSize = 4 * 1024 * 1024;
-let key = '';
 let generation = 0;
 let busy = false;
 const songs = ['星を継ぐ旅','風の街道','小さな灯の町','木漏れ日の森','深き岩の記憶',
@@ -16,7 +15,6 @@ function request(method, track, body, progress) {
     const xhr = new XMLHttpRequest();
     xhr.open(method,api+(track ? '?track='+encodeURIComponent(track.id) : ''));
     xhr.timeout = 30000;
-    xhr.setRequestHeader('Authorization','Bearer '+key);
     if (track) xhr.setRequestHeader('X-BGM-Sha',track.sha || 'new');
     if (body) {
       xhr.setRequestHeader('Content-Type','application/octet-stream');
@@ -26,7 +24,15 @@ function request(method, track, body, progress) {
       let data;
       try { data = JSON.parse(xhr.responseText); } catch {}
       if (xhr.status >= 200 && xhr.status < 300 && data) resolve(data);
-      else reject(new Error(data?.error || '接続できませんでした。公開URLと通信状態を確認してください。'));
+      else {
+        if (xhr.status === 401) {
+          $('library').hidden = true;
+          $('tracks').replaceChildren();
+          $('login').hidden = false;
+          $('message').textContent = 'GitHubでログインしてください。';
+        }
+        reject(new Error(data?.error || '接続できませんでした。公開URLと通信状態を確認してください。'));
+      }
     };
     xhr.onerror = xhr.ontimeout = () => reject(new Error('通信を完了できませんでした。再操作の前に登録状況を更新してください。'));
     xhr.send(body || null);
@@ -166,22 +172,24 @@ async function load() {
     if (lifecycle === generation) $('message').textContent = error.message;
   }
 }
-$('login').onsubmit = event => {
-  event.preventDefault();
-  key = $('key').value.trim();
-  $('key').value = '';
-  load();
-};
 $('refresh').onclick = load;
-$('logout').onclick = () => {
-  if (busy) { $('message').textContent = '保存の完了を待ってください。'; return; }
-  generation++;
-  key = '';
-  $('tracks').replaceChildren();
-  $('message').textContent = '';
-  $('library').hidden = true;
-  $('login').hidden = false;
+$('logout').onclick = async () => {
+  if (busy) return;
+  try {
+    const response = await fetch(api+'?auth=logout',{method:'POST'});
+    if (!response.ok) throw new Error();
+    location.replace('/bgm-admin/');
+  } catch {
+    $('message').textContent = 'ログアウトできませんでした。もう一度お試しください。';
+  }
 };
+load().then(() => {
+  const status = new URLSearchParams(location.search).get('login');
+  if (status && $('library').hidden) {
+    $('message').textContent = status === 'denied' ? 'リポジトリ所有者のGitHubアカウントでログインしてください。' :
+      'ログインを完了できませんでした。もう一度お試しください。';
+  }
+});
 const showQRError = () => {
   $('qr').hidden = $('qr-download').hidden = true;
   $('qr-error').hidden = false;

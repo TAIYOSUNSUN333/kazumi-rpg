@@ -11,11 +11,7 @@
 <body>
 <main>
 <header><p>一美のスター街道</p><h1>BGM管理</h1></header>
-<form id="login">
-<label for="key">管理キー</label>
-<input id="key" type="password" autocomplete="off" required maxlength="64">
-<button>ログイン</button>
-</form>
+<p id="login"><a href="/.netlify/functions/bgm-admin?auth=login">GitHubでログイン</a></p>
 <p id="message" role="status"></p>
 <section id="library" hidden>
 <div class="bar"><span id="count"></span><button id="refresh">更新</button><button id="logout">ログアウト</button></div>

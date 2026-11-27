@@ -2,21 +2,26 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { execFileSync } = require('node:child_process');
 const { handler } = require('../netlify/functions/bgm-admin.js');
-const key = 'a'.repeat(64);
+const origin = 'https://kazumi-rpg.netlify.app';
+let session;
 const sha = 'c'.repeat(40);
 const commit = 'd'.repeat(40);
 const event = (httpMethod, track, extra = {}) => ({
   httpMethod, queryStringParameters:track && {track},
-  headers:{authorization:'Bearer '+key,'x-bgm-sha':'new'},...extra
+  headers:{cookie:session,origin,'x-bgm-sha':'new'},...extra
 });
 
 test('admin authentication, 30 slots, safe writes and QR', async () => {
   assert.equal((await handler(event('GET'))).statusCode,503);
-  process.env.BGM_ADMIN_KEY = key;
+  process.env.BGM_OAUTH_CLIENT_ID = 'test-client';
+  process.env.BGM_OAUTH_CLIENT_SECRET = 'test-secret';
   process.env.BGM_GITHUB_TOKEN = 'mock-contents-token';
   process.env.BGM_PUBLIC_URL = 'https://example.netlify.app';
   const calls = [];
+  let login = 'other-user';
   global.fetch = async (url,options) => {
+    if (url.endsWith('/access_token')) return Response.json({access_token:'mock-login'});
+    if (url.endsWith('/user')) return Response.json({login});
     assert.equal(options.headers.Authorization,'Bearer mock-contents-token');
     calls.push([url,options.method,options.body && JSON.parse(options.body)]);
     if (!options.body) return Response.json([{type:'file',name:'01_title.mp3',sha,size:20}]);
@@ -24,6 +29,18 @@ test('admin authentication, 30 slots, safe writes and QR', async () => {
   };
   assert.equal((await handler(event('GET',null,{headers:{}}))).statusCode,401);
   assert.equal(calls.length,0);
+  const begin = await handler(event('GET',null,{queryStringParameters:{auth:'login'},headers:{}}));
+  const state = new URL(begin.headers.Location).searchParams.get('state');
+  const cookie = begin.multiValueHeaders['Set-Cookie'][0].split(';')[0];
+  const callback = state => handler(event('GET',null,{queryStringParameters:{auth:'callback',code:'test',state},headers:{cookie}}));
+  assert.match((await callback('0'.repeat(64))).headers.Location,/login=retry/);
+  assert.match((await callback(state)).headers.Location,/login=denied/);
+  login = 'TAIYOSUNSUN333';
+  const authenticated = await callback(state);
+  assert.equal(authenticated.headers.Location,'/bgm-admin/');
+  session = authenticated.multiValueHeaders['Set-Cookie'][1].split(';')[0];
+  assert.equal((await handler(event('GET',null,{headers:{cookie:session+'0'}}))).statusCode,401);
+  assert.equal((await handler(event('DELETE','title',{headers:{cookie:session,origin:'https://example.org'}}))).statusCode,403);
   const list = JSON.parse((await handler(event('GET'))).body);
   assert.equal(list.tracks.length,30);
   assert.equal(list.tracks[0].sha,sha);
@@ -36,7 +53,7 @@ test('admin authentication, 30 slots, safe writes and QR', async () => {
   assert.equal(first.statusCode,200);
   assert.match(calls.at(-1)[0],/assets\/bgm\/01_title.mp3$/);
   assert.equal(calls.at(-1)[2].content,bytes.toString('base64'));
-  const headers = {authorization:'Bearer '+key,'x-bgm-sha':sha};
+  const headers = {cookie:session,origin,'x-bgm-sha':sha};
   const replace = await handler(event('PUT','title',{headers,body:bytes.toString('base64'),isBase64Encoded:true}));
   assert.equal(replace.statusCode,200);
   assert.equal(calls.at(-1)[2].sha,sha);

@@ -1,4 +1,4 @@
-const { createHash, timingSafeEqual } = require('node:crypto');
+const { authenticate, sessionValid, origin } = require('../bgm-auth.js');
 const { bgmCatalog } = require('../../bgm.js');
 const QRCode = require('qrcode');
 
@@ -52,13 +52,13 @@ exports.handler = async event => {
       'Content-Disposition':disposition+'; filename="kazumi-bgm-admin.png"'},
       isBase64Encoded:true,body:png.toString('base64')};
   }
-  const secret = process.env.BGM_ADMIN_KEY;
-  if (!secret || !/^[a-f0-9]{64}$/i.test(secret) || !process.env.BGM_GITHUB_TOKEN) {
-    return result(503,{error:'管理画面の初期設定が必要です。'});
+  if (!process.env.BGM_OAUTH_CLIENT_ID || !process.env.BGM_OAUTH_CLIENT_SECRET || !process.env.BGM_GITHUB_TOKEN) {
+    return result(503,{error:'NetlifyでGitHubログインの初期設定が必要です。'});
   }
-  const hash = value => createHash('sha256').update(value).digest();
-  if (!timingSafeEqual(hash(event.headers.authorization || ''),hash('Bearer '+secret))) {
-    return result(401,{error:'管理キーを確認してください。'});
+  if (query.auth) return authenticate(event,query,result);
+  if (!sessionValid(event)) return result(401,{error:'GitHubでログインしてください。'});
+  if (['PUT','DELETE'].includes(method) && event.headers.origin !== origin) {
+    return result(403,{error:'本番のBGM管理画面から操作してください。'});
   }
   try {
     if (method === 'GET' && !query.track) {

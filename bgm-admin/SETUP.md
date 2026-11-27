@@ -1,13 +1,10 @@
-# BGM管理画面の公開
+# BGM管理画面のGitHubログイン
 
-既存のNetlifyサイトをGitHubの `TAIYOSUNSUN333/kazumi-rpg` に接続し、本番ブランチを `main` に設定します。既存のサイトで設定済みの場合はそのまま使います。
+管理画面はGitHubアカウント `TAIYOSUNSUN333` のログインを受け付けます。
 
-Netlifyの環境変数を Functions の実行環境に設定します。リポジトリ、クライアント用コード、会話には値を書き込まないでください。
+1. [GitHubのOAuth App登録](https://github.com/settings/applications/new)を開きます。アプリ名は任意です。Homepage URLに `https://kazumi-rpg.netlify.app/bgm-admin/`、Authorization callback URLに `https://kazumi-rpg.netlify.app/.netlify/functions/bgm-admin?auth=callback` を指定します。
+2. 登録後、Client IDを確認し、Client secretを生成します。
+3. Netlifyの **Project configuration → Environment variables** で、Client IDを `BGM_OAUTH_CLIENT_ID`、Client secretを `BGM_OAUTH_CLIENT_SECRET` に登録します。対象は **Production**、スコープは **Functions** に設定します。音源の保存に使用する `BGM_GITHUB_TOKEN` は登録済みの値を使用できます。新規の場合は対象リポジトリのContents読み取り・書き込み権限を付けます。
+4. 本番を再デプロイし、BGM管理画面の「GitHubでログイン」を使います。旧変数 `BGM_ADMIN_KEY` は削除できます。
 
-| 環境変数 | 内容 |
-| --- | --- |
-| `BGM_ADMIN_KEY` | `openssl rand -hex 32` で生成した64桁の管理キー。管理者本人のパスワードマネージャーに保管します。 |
-| `BGM_GITHUB_TOKEN` | 対象リポジトリだけにアクセス可能で、Contents の読み取りと書き込みを許可した GitHub fine-grained トークン。 |
-| `BGM_PUBLIC_URL` | QRコードを独自ドメインに固定する場合の本番サイトURL。任意。 |
-
-変数を設定後に再デプロイすると、本番サイトの `/bgm-admin/` から利用できます。画面の「管理画面のURL・QRコード」で直接URLとQRコードを表示します。QRコードに管理キーは含まれません。MP3は1曲につき4 MiBまで。アップロード、差し替え、削除でGitHubの `main` にコミットします。公開の確認は配信中のMP3をGitHubのファイルと照合します。GitHub Pagesからはサーバー処理を利用できません。
+Client secretとGitHubトークンの値はNetlifyの設定にだけ入力してください。GitHubから受け取るログイン用トークンは本人確認に使います。音源は1曲4 MiB以下のMP3です。QRコードにはURLのみが入ります。
