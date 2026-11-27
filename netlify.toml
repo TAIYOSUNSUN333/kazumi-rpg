@@ -10,9 +10,11 @@
   directory = "netlify/functions"
 
 [[headers]]
-  for = "/bgm-admin/*"
+  for = "/bgm-studio/*"
   [headers.values]
     Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    Cache-Control = "no-store"
+    Netlify-CDN-Cache-Control = "no-store"
     Referrer-Policy = "no-referrer"
     X-Content-Type-Options = "nosniff"
     X-Robots-Tag = "noindex, nofollow"
@@ -21,4 +23,22 @@
   from = "/netlify/*"
   to = "/index.html"
   status = 404
+  force = true
+
+[[redirects]]
+  from = "/bgm-admin"
+  to = "/bgm-studio/"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/bgm-admin/"
+  to = "/bgm-studio/"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/bgm-admin/index.html"
+  to = "/bgm-studio/"
+  status = 302
   force = true

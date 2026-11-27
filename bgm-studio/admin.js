@@ -178,7 +178,7 @@ $('logout').onclick = async () => {
   try {
     const response = await fetch(api+'?auth=logout',{method:'POST'});
     if (!response.ok) throw new Error();
-    location.replace('/bgm-admin/');
+    location.replace('/bgm-studio/');
   } catch {
     $('message').textContent = 'ログアウトできませんでした。もう一度お試しください。';
   }

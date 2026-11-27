@@ -41,7 +41,7 @@ exports.handler = async event => {
     try {
       const origin = new URL(base);
       if (origin.protocol !== 'https:' || origin.username || origin.password) throw new Error('Invalid origin');
-      url = new URL('/bgm-admin/',origin.origin).href;
+      url = new URL('/bgm-studio/',origin.origin).href;
     } catch {
       return result(503,{error:'公開URLを取得できません。'});
     }

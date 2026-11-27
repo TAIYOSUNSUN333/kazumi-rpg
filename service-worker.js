@@ -1,6 +1,6 @@
 // Change the cache name whenever a published app shell changes.
 const cachePrefix = 'kazumi-rpg-';
-const cacheName = cachePrefix + 'action-7';
+const cacheName = cachePrefix + 'action-8';
 const shellFiles = [
   './', './index.html', './game.css', './manifest.webmanifest',
   './prefectures.js', './world.js', './riddles.js', './stones.js', './bgm.js', './audio.js',
@@ -30,7 +30,9 @@ self.addEventListener('activate',event => {
 self.addEventListener('fetch',event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || !url.href.startsWith(scope) || url.pathname.endsWith('/service-worker.js')) return;
-  if (url.href.startsWith(scope + 'assets/bgm/')) return;
+  // Admin screens and authenticated APIs always use the browser's network path.
+  if (['bgm-admin','bgm-studio','.netlify/functions/bgm-admin','assets/bgm/']
+    .some(path => url.href.startsWith(scope+path))) return;
   const isShell = shellURLs.has(url.href);
   const isRoot = event.request.mode === 'navigate' && (url.pathname === new URL(scope).pathname ||
     shellURLs.has(url.origin + url.pathname));

@@ -37,7 +37,7 @@ test('admin authentication, 30 slots, safe writes and QR', async () => {
   assert.match((await callback(state)).headers.Location,/login=denied/);
   login = 'TAIYOSUNSUN333';
   const authenticated = await callback(state);
-  assert.equal(authenticated.headers.Location,'/bgm-admin/');
+  assert.equal(authenticated.headers.Location,'/bgm-studio/');
   session = authenticated.multiValueHeaders['Set-Cookie'][1].split(';')[0];
   assert.equal((await handler(event('GET',null,{headers:{cookie:session+'0'}}))).statusCode,401);
   assert.equal((await handler(event('DELETE','title',{headers:{cookie:session,origin:'https://example.org'}}))).statusCode,403);
@@ -67,6 +67,6 @@ test('admin authentication, 30 slots, safe writes and QR', async () => {
   assert.equal(download.body,qr.body);
   process.env.BGM_PUBLIC_URL += '/?debug=secret#token';
   const link = await handler(event('GET',null,{queryStringParameters:{qr:'url'},headers:{}}));
-  assert.equal(JSON.parse(link.body).url,'https://example.netlify.app/bgm-admin/');
+  assert.equal(JSON.parse(link.body).url,'https://example.netlify.app/bgm-studio/');
   assert.equal((await handler(event('GET',null,{queryStringParameters:{qr:'1'},headers:{}}))).body,qr.body);
 });

@@ -34,7 +34,7 @@ async function authenticate(event, query, result) {
     return redirect(url.href,[cookie(stateName,state,600)]);
   }
   if (query.auth !== 'callback') return result(404,{error:'操作が見つかりませんでした。'});
-  const finish = (status, session) => redirect('/bgm-admin/'+(status ? '?login='+status : ''),[
+  const finish = (status, session) => redirect('/bgm-studio/'+(status ? '?login='+status : ''),[
     cookie(stateName,'',0),session ? cookie(sessionName,session,28800) : cookie(sessionName,'',0)
   ]);
   if (!query.code || !/^[a-f0-9]{64}$/.test(query.state || '') || !matches(query.state,cookies(event)[stateName])) {
