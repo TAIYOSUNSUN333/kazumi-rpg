@@ -182,8 +182,19 @@ $('logout').onclick = () => {
   $('library').hidden = true;
   $('login').hidden = false;
 };
-const direct = new URL('/bgm-admin/',location.href).href;
-$('direct').textContent = direct;
-$('direct').href = direct;
-$('qr').onerror = () => { $('qr').hidden = true; $('qr-error').hidden = false; };
-$('qr').src = api+'?qr=1';
+const showQRError = () => {
+  $('qr').hidden = $('qr-download').hidden = true;
+  $('qr-error').hidden = false;
+};
+$('qr').hidden = true;
+$('qr').onerror = showQRError;
+$('qr').onload = () => { $('qr').hidden = $('qr-download').hidden = false; };
+fetch(api+'?qr=url',{cache:'no-store'}).then(async response => {
+  if (!response.ok) throw new Error('URL unavailable');
+  const {url} = await response.json();
+  const direct = new URL(url);
+  if (direct.protocol !== 'https:') throw new Error('Invalid URL');
+  $('direct').textContent = direct.href;
+  $('direct').href = direct.href;
+  $('qr').src = api+'?qr=1';
+}).catch(showQRError);

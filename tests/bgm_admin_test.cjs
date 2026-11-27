@@ -43,6 +43,13 @@ test('admin authentication, 30 slots, safe writes and QR', async () => {
   assert.equal((await handler(event('DELETE','title',{headers}))).statusCode,200);
   assert.equal(calls.at(-1)[2].branch,'main');
   const qr = await handler(event('GET',null,{queryStringParameters:{qr:'1'},headers:{}}));
-  assert.equal(qr.headers['Content-Type'],'image/svg+xml');
-  assert.ok(!qr.body.includes(key));
+  assert.equal(qr.headers['Content-Type'],'image/png');
+  assert.equal(Buffer.from(qr.body,'base64').subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+  const download = await handler(event('GET',null,{queryStringParameters:{qr:'download'},headers:{}}));
+  assert.match(download.headers['Content-Disposition'],/^attachment/);
+  assert.equal(download.body,qr.body);
+  process.env.BGM_PUBLIC_URL += '/?debug=secret#token';
+  const link = await handler(event('GET',null,{queryStringParameters:{qr:'url'},headers:{}}));
+  assert.equal(JSON.parse(link.body).url,'https://example.netlify.app/bgm-admin/');
+  assert.equal((await handler(event('GET',null,{queryStringParameters:{qr:'1'},headers:{}}))).body,qr.body);
 });

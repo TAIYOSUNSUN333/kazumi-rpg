@@ -34,12 +34,23 @@ async function github(path, method = 'GET', payload) {
 exports.handler = async event => {
   const method = event.httpMethod;
   const query = event.queryStringParameters || {};
-  if (method === 'GET' && query.qr === '1') {
+  if (method === 'GET' && ['1','download','url'].includes(query.qr)) {
     // Use the platform's production URL, avoiding arbitrary URLs supplied by callers.
     const base = process.env.BGM_PUBLIC_URL || process.env.URL || event.rawUrl;
-    if (!base || !base.startsWith('https://')) return result(503,{error:'公開URLを取得できません。'});
-    const svg = await QRCode.toString(new URL('/bgm-admin/',base).href,{type:'svg',margin:3});
-    return {statusCode:200,headers:{...headers,'Content-Type':'image/svg+xml'},body:svg};
+    let url;
+    try {
+      const origin = new URL(base);
+      if (origin.protocol !== 'https:' || origin.username || origin.password) throw new Error('Invalid origin');
+      url = new URL('/bgm-admin/',origin.origin).href;
+    } catch {
+      return result(503,{error:'公開URLを取得できません。'});
+    }
+    if (query.qr === 'url') return result(200,{url});
+    const png = await QRCode.toBuffer(url,{type:'png',width:720,margin:4,errorCorrectionLevel:'M'});
+    const disposition = query.qr === 'download' ? 'attachment' : 'inline';
+    return {statusCode:200,headers:{...headers,'Content-Type':'image/png',
+      'Content-Disposition':disposition+'; filename="kazumi-bgm-admin.png"'},
+      isBase64Encoded:true,body:png.toString('base64')};
   }
   const secret = process.env.BGM_ADMIN_KEY;
   if (!secret || !/^[a-f0-9]{64}$/i.test(secret) || !process.env.BGM_GITHUB_TOKEN) {

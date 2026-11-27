@@ -185,3 +185,5 @@
 - [x] Functionsで管理キーを検証し、対象リポジトリの `assets/bgm` にGitHubコミットを作成。4 MiB以下のMP3を受け付け、固定のファイル名と更新対象のSHAを使用。
 - [x] 模擬GitHubと実MP3で認証・登録・差し替え・削除・QR生成を検証。Chromiumのスマートフォン幅でファイル選択と反映表示を確認。既存のBGM回帰テストに合格。
 - [ ] Netlify本番の認証情報設定と実サイトでの一連の公開確認。設定手順は [bgm-admin/SETUP.md](bgm-admin/SETUP.md)。
+
+- 管理画面のQRを720pxのダウンロード可能なPNGに変更。読み取り結果がHTTPSの管理画面URLのみであることと、iPhone・Pixel相当の画面でPNGを保存できることを確認。本番サイトと実機カメラでの確認は未完了。
