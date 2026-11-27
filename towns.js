@@ -59,6 +59,10 @@ const towns = [
     height:kind === 'inn' ? 49 : kind === 'home' ? 33 : 36+(chapter*3+i*5)%13,
     ...(kind === 'secret' ? {seal:{solved:false}} : {})
   }));
+  if (!sites.some(site => site.kind === 'clinic')) {
+    sites.splice(sites.length-1,0,{id:chapter+'-clinic',chapter,kind:'clinic',x:base+315,
+      row:150,upper:false,width:19,height:39});
+  }
   return {name, style, product, meal, resident, chapter, sites};
 });
 
@@ -142,6 +146,7 @@ function loadTowns(data) {
 
 function tickTown(dt) {
   townSeconds += dt;
+  tickFamily();
   const periods = Math.floor((townDay() - townInterestDay) / 30);
   if (periods <= 0) return;
   townInterestDay += periods * 30;
@@ -514,6 +519,8 @@ function servicePanel(note = '') {
   const town = towns[site.chapter];
   const [name, keeper] = townTypes[site.kind];
   const services = [['室内を歩く', resume]];
+  if (['items','pharmacy','store'].includes(site.kind)) services.push(['生活用品を買う',familyShop]);
+  if (site.kind === 'clinic') services.push(['妊娠・出産の相談',maternityClinic]);
   if (shopCounterReady()) services.push(['売る',openShopSell]);
   const closed = siteAvailability(site);
   if (closed) return panel(name + '　' + town.name, [closed, '店を出るには入口へ戻ってください。'], services);
@@ -559,6 +566,9 @@ function servicePanel(note = '') {
         lodging.blessing ? '全回復し、ゲーム内の翌朝まで攻撃力上昇。' :
         lodging.special ? '全回復。眺めのよい客室で特別な会話を楽しめます。' : '宿泊するとHP・MPが全快。');
       services.push(['宿泊する　' + lodging.price + 'G', beginStay, player.gold < lodging.price]);
+      if (availableAdults().some(name => ['dating','married'].includes(relationship(name).stage))) {
+        services.push(['二人で過ごす宿泊を選ぶ',romanceAtInn,player.gold < lodging.price]);
+      }
       break;
     }
     case 'restaurant':

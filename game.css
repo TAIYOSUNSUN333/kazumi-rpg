@@ -349,3 +349,41 @@ button:active, button[data-held=true] { background: linear-gradient(#927751,#544
 @media (orientation:portrait) {
   #game[data-battle=""]:has(#place-title:not([hidden])) #message { bottom:max(199px,calc(env(safe-area-inset-bottom) + 183px)); }
 }
+
+.family-picture {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 .65rem;
+  border-radius: .6rem;
+  image-rendering: pixelated;
+}
+.family-form, .family-form label { display: grid; gap: .45rem; }
+.family-form { margin: .75rem 0; }
+.family-form input {
+  width: 100%;
+  padding: .55rem;
+  font-size: max(16px,1rem);
+  color: #2b2038;
+  background: #fff3dc;
+  border-radius: .35rem;
+}
+#panel-body a { color: #ffdca3; }
+
+.equipment-gallery {
+  display: inline-flex;
+  gap: .35rem;
+  margin: .3rem .35rem .15rem 0;
+  vertical-align: middle;
+}
+.equipment-gallery canvas { border-radius: .35rem; image-rendering: pixelated; }
+.dialogue-art[data-mood=romance] { outline: 1px solid #f2b8cb88; }
+
+#panel[data-kind=life] {
+  max-height: min(78%, 580px);
+  background: #241e37f7;
+}
+#panel[data-kind=life] #panel-buttons button {
+  white-space: normal;
+  min-height: 44px;
+}

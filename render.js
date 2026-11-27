@@ -108,8 +108,14 @@ function groundShadow(x, y, width, height) {
 }
 
 function drawActor(name, x, y, scale, face, pose) {
-  const sheet = picture('actors');
   groundShadow(x, y + 1, 11 * scale, 3 * scale);
+  if (!knownActors.has(name)) {
+    ctx.save(); ctx.translate(x,y); ctx.scale((face < 0 ? -1 : 1)*scale,scale);
+    ctx.drawImage(personArt(name,pose),-34,-66,68,70);
+    ctx.restore();
+    return;
+  }
+  const sheet = picture('actors');
   if (!sheet) return;
   ctx.save();
   ctx.translate(x, y);
@@ -144,6 +150,10 @@ function hero(x, y, scale, face) {
     chargeStarted !== null && clock - chargeStarted >= .58 ? 11 :
     gait === 'run' ? Math.floor(clock * 17) % 2 : -1;
   if (frame < 0 || !actionSprite(x,y,scale,face,frame)) drawActor('一美', x, y, scale, face, pose);
+  const pregnancy = family.pregnancy?.notice || 0;
+  if (pregnancy >= 2 && mode === 'field' && pose !== 8) {
+    artOval(ctx,'#926c92',x+Math.sign(face||1)*4*scale,y-18*scale,(pregnancy+3)*scale,5*scale);
+  }
   const armor = equipped('armor');
   if (armor !== equipment.armor[0]) {
     const metal = stoneArmor ? '#dbb878' : regionalGear.armor !== null ? prefectures[regionalGear.armor].color :
@@ -177,6 +187,14 @@ function drawCat(x, y, scale, formIndex = 0) {
     reducedMotion.matches ? 0 : Math.floor(clock * 7) % 3;
   groundShadow(x, y + 2, 10 * scale, 3 * scale);
   if (formIndex) lightAt(ctx, x, y - 13, (21 + formIndex * 5) * scale, awakening[formIndex].color + '55');
+  if (formIndex && !(battle && !cat.hp)) {
+    const float = reducedMotion.matches ? 0 : Math.sin(clock*5+formIndex)*3;
+    const width = (61+formIndex*5)*scale, height=(56+formIndex*4)*scale;
+    ctx.drawImage(sosoFormArt(formIndex),x-width/2,y-height+8*scale+float,width,height);
+    if (active) drawElementPattern(ctx,x,y-height*.45,26*scale,
+      ['', '炎','氷','雷','闇','全'][formIndex],formIndex,(clock*.72)%1);
+    return;
+  }
   if (!sheet) return;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -189,20 +207,15 @@ function monster(enemy, x, y, scale, commandPose) {
   const phase = isFinalBoss(enemy) ? finalPhase(enemy) : 1;
   const featured = enemy.trial !== undefined ? 3 : enemy.rank === 'major' && enemy.chapter === 9 ? 0 :
     isFinalBoss(enemy) ? (enemy.chapter === last || phase === 3 ? 2 : 1) : null;
-  const sprite = enemy.boss ? (enemy.hiddenRegion !== undefined && variant % 2 ? 5 : 4) : variant;
   const bob = reducedMotion.matches ? 0 : Math.sin(clock * 6 + (enemy.slot ?? 0)) * (variant > 1 ? 2 : 1);
   const body = battle?.enemy === enemy ? battle.body : combatBody(enemy);
   const size = 56 * scale;
   const large = Math.min(125, size * .35 * body.width);
   groundShadow(x, y + 1, large, Math.min(27, size * .075));
   const facing = commandPose?.face ?? enemy.fieldFacing?.x ?? (enemy.x < player.x ? 1 : -1);
-  if (!enemy.boss && body.motion === 'duel') {
-    const pose = commandPose?.pose ?? 1 + Math.floor(clock * 9) % 2;
-    drawActor('守衛',x,y,scale,facing,pose);
-    return;
-  }
+
   const image = enemy.trial !== undefined ? picture('emperor-' + enemy.trial) :
-    featured === null ? picture('enemy-' + sprite) : picture('boss-' + featured);
+    featured === null ? creatureArt(enemy) : picture('boss-' + featured) || creatureArt(enemy);
   if (!image) return;
   ctx.save();
   const attack = commandPose?.pose === 3;
@@ -210,6 +223,11 @@ function monster(enemy, x, y, scale, commandPose) {
   const lift = body.motion === 'float' ? -5 : 0;
   ctx.translate(x + flinch, y + bob + lift);
   if (attack && body.motion === 'stomp') ctx.scale(1.06, .94);
+  if (!reducedMotion.matches && featured === null) {
+    if (body.motion === 'scuttle') ctx.scale(1.04+Math.sin(clock*17)*.07, .88+Math.cos(clock*17)*.07);
+    if (body.motion === 'float') ctx.rotate(Math.sin(clock*3)*.065);
+    if (body.motion === 'charge' && commandPose?.pose === 1) ctx.scale(1.09,.94);
+  }
   if (attack && ['duel','charge'].includes(body.motion)) {
     ctx.rotate(-Math.sign(facing) * (body.motion === 'charge' ? .15 : .07));
   }
@@ -252,6 +270,7 @@ function drawBuilding(site,camera) {
   ctx.scale((site.width || 19)/19,(site.height || 40)/40);
   ctx.translate(-x,-y);
   drawBuildingArt(site,camera);
+  paintFacade(site,x,y);
   ctx.restore();
 }
 
@@ -388,7 +407,8 @@ function drawTown(chapter, camera) {
     const resident = commuter(town,index);
     if (resident.x < camera || resident.x > camera + 640) continue;
     const x = resident.x - camera, y = fieldY(resident.x,resident.y);
-    drawCompanion(['タク','薬師','守衛'][index],x,y,.68,resident.face,1);
+    const name=index === 0 ? town.resident : town.name+'・'+['','働く住民','旅人'][index];
+    drawCompanion(name,x,y,.68,resident.face,1);
     if (index === 0) label(town.resident,x,y - 36,'#ffe0a9',9);
     if (index === 1 && townHour() >= 10 && townHour() < 18) {
       rect(x + 7,y - 12,2,14,'#b68c66');
@@ -986,6 +1006,7 @@ function drawCommandEffect(action, positions) {
     const marks = t < .47 ? from : target;
     const radius = motion === 'limit' ? 49 + t * 40 : 15 + t * 24;
     lightAt(ctx,marks.x,marks.y-23,radius + 16,(motion === 'heal' ? '#9defb6' : hue) + 'a0');
+    drawElementPattern(ctx,marks.x,marks.y-18,radius,motion === 'heal' ? '光' : element,visualSeed(action.move.name),t);
     ctx.strokeStyle = motion === 'heal' ? '#a2f1bb' : hue;
     for (const size of [radius,radius*.67]) {
       ctx.beginPath();
@@ -1068,6 +1089,11 @@ function drawBattle() {
     drawSummon(turn.summon.spirit,leader.x+turn.side*48,leader.y-27,1.12,turn.summon.glow>clock);
   }
   drawCommandEffect(turn.action,positions);
+  if (battle.familyEffectUntil > clock) {
+    const heroPoint = positions.get(turn.allies[0]);
+    drawElementPattern(ctx,heroPoint.x,heroPoint.y-18,41,battle.familyElement,127,
+      1-(battle.familyEffectUntil-clock)/.65);
+  }
   for (const number of numbers) {
     if (!number.field) label(number.text,number.x,number.y - (1-(number.expires-clock)/.7)*24,number.color,16);
   }
@@ -1081,9 +1107,11 @@ function drawFireballs(camera, arena = false) {
     if (Boolean(bolt.arena) !== arena || bolt.chapter !== chapterOf(player.x)) continue;
     const x = bolt.x - camera;
     const y = (arena ? battleDepth(bolt.y) : fieldY(bolt.x,bolt.y)) - 19 - bolt.height * .54;
-    lightAt(ctx,x,y,28,(bolt.tint || '#ff7631') + 'a0');
+    const tint=bolt.tint || '#ff7631';
+    lightAt(ctx,x,y,28,tint+'a0');
+    drawElementPattern(ctx,x,y,20,bolt.element || '炎',visualSeed(bolt.element || '炎'),(bolt.distance*.026)%1);
     const dx=bolt.direction.x, dy=bolt.direction.y*.68;
-    polygon([[x-dx*20,y-dy*20],[x-dx*9+dy*7,y-dy*9-dx*7],[x+dx*7,y+dy*7],[x-dx*9-dy*7,y-dy*9+dx*7]],'#f38340c7');
+    polygon([[x-dx*20,y-dy*20],[x-dx*9+dy*7,y-dy*9-dx*7],[x+dx*7,y+dy*7],[x-dx*9-dy*7,y-dy*9+dx*7]],tint+'c7');
     diamond(x,y,7,6,'#ffe5a5');
     diamond(x+1,y-1,3,3,'#fffbd1');
   }

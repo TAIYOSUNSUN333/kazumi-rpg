@@ -1,12 +1,12 @@
 // Change the cache name whenever a published app shell changes.
 const cachePrefix = 'kazumi-rpg-';
-const cacheName = cachePrefix + 'action-11';
+const cacheName = cachePrefix + 'action-13';
 const shellFiles = [
   './', './index.html', './game.css', './manifest.webmanifest',
   './prefectures.js', './world.js', './riddles.js', './stones.js', './bgm.js', './audio.js',
-  './companions.js', './towns.js', './tourism.js', './graphics.js', './battlefield.js',
+  './companions.js', './towns.js', './tourism.js', './visual-world.js', './graphics.js', './battlefield.js',
   './bath.js', './inn.js', './terrain.js', './stages.js', './movement.js', './command-battle.js',
-  './action-battle.js', './encounter-group.js', './summons.js', './market.js', './game.js', './action-render.js', './lodging-render.js', './render.js',
+  './action-battle.js', './encounter-group.js', './summons.js', './market.js', './family.js', './game.js', './action-render.js', './lodging-render.js', './render.js',
   './assets/portrait-0.webp', './assets/story-0.webp', './assets/land-0.webp',
   './assets/actors.webp', './assets/soso.webp', './assets/action-poses.webp',
   './assets/enemy-0.webp', './assets/enemy-1.webp', './assets/enemy-2.webp',

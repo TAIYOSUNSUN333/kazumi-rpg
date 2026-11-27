@@ -3,7 +3,9 @@ import os
 from playwright.sync_api import sync_playwright, expect
 with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path=os.getenv('KAZUMI_CHROMIUM'))
-  page=browser.new_page(viewport={'width':844,'height':390},has_touch=True,is_mobile=True)
+  page=browser.new_page(viewport={'width':844,'height':390},has_touch=True,is_mobile=True,service_workers='block')
+  # The BGM suite covers end-of-track gating; this test covers story progression.
+  page.route('**/assets/bgm/bgm_30.mp3', lambda route: route.fulfill(status=404))
   errors=[]
   page.on('pageerror',lambda e:errors.append(str(e)))
   page.add_init_script("localStorage.setItem('kazumi-battle-style', JSON.stringify('command'))")

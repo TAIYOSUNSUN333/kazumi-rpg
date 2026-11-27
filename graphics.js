@@ -9,13 +9,16 @@ try {
 } catch {}
 
 function picture(id) {
-  if (!artwork.has(id)) {
-    const image = new Image();
+  let image = artwork.get(id);
+  if (image) artwork.delete(id);
+  else {
+    image = new Image();
     image.decoding = 'async';
     image.src = 'assets/' + id + '.webp';
-    artwork.set(id, image);
   }
-  const image = artwork.get(id);
+  artwork.set(id,image);
+  const budget = artQuality === 'low' ? 36 : 68;
+  while (artwork.size > budget) artwork.delete(artwork.keys().next().value);
   return image.complete && image.naturalWidth > 0 ? image : null;
 }
 
@@ -63,13 +66,17 @@ function decoratePanel(title) {
     return;
   }
 
-  const character = [...knownActors.keys()].find(name => title.startsWith(name + 'を') || title.startsWith(name + 'と')) ||
+  const speaker = parent.querySelector('.speaker')?.textContent.trim();
+  let character = [...knownActors.keys()].find(name => title.startsWith(name + 'を') || title.startsWith(name + 'と')) ||
     (title === '仲間とのひととき' ? currentCompanion()?.name : null) ||
     (['ソソとの思い出','ソソがいない','ソソは倒れた'].includes(title) ? 'ソソ' : null) ||
     (/^(小さな家の朝|冒険への旅立ち|若草山から続く道|世界に朝が戻った|一美は倒れた)/.test(title) ? '一美' : null);
+  if (!character) character = Object.keys(companionProfiles).find(name => title.startsWith(name+'を') || title.startsWith(name+'と')) ||
+    (speaker && speaker.length <= 20 ? (companionProfiles[speaker] ? speaker : speaker+'・'+chapterOf(player.x)) : null);
   if (!character) return;
   const portrait = knownActors.get(character);
-  const mood = /別れ|倒れ/.test(title) ? 'solemn' : /ひととき/.test(title) ? 'warm' : 'calm';
+  const mood = /別れ|倒れ|置き手紙/.test(title) ? 'solemn' : /恋愛|二人|約束|朝の窓辺/.test(title) ? 'romance' :
+    /ひととき|仲直り|誕生/.test(title) ? 'warm' : /ソソがいない|危機/.test(title) ? 'surprised' : 'calm';
   if (portrait !== undefined) {
     const expressions = {'小さな家の朝':3,'若草山から続く道':2,'世界に朝が戻った':0,'一美は倒れた':1};
     frame.src = 'assets/' + (character === '一美' && title in expressions ? 'emotion-' + expressions[title] : 'portrait-' + portrait) + '.webp';
@@ -78,12 +85,12 @@ function decoratePanel(title) {
     frame.dataset.mood = mood;
     parent.prepend(frame);
   } else {
-    const preview = document.createElement('div');
-    preview.className = 'dialogue-art regional-portrait';
-    preview.setAttribute('role', 'img');
-    preview.setAttribute('aria-label', character);
-    preview.style.setProperty('--pose-row', actorRow(character));
-    preview.style.setProperty('--pose-col', mood === 'solemn' ? 5 : mood === 'warm' ? 7 : 0);
+    const preview = document.createElement('canvas');
+    preview.width=92; preview.height=96;
+    preview.className='dialogue-art';
+    preview.setAttribute('role','img');
+    preview.setAttribute('aria-label',character);
+    preview.getContext('2d').drawImage(personArt(character,0,true,mood),0,0);
     parent.prepend(preview);
   }
 }
@@ -127,6 +134,12 @@ function landscapeArt(g, chapter, camera, cave = false) {
   g.save();
   g.imageSmoothingEnabled = artQuality !== 'low';
   coverArt(g, image, 0, 0, 640, 360, cave ? 0 : Math.sin(camera / 390) * 22);
+  if (!cave) {
+    const layer=localBackdrop(chapter,seasonIndex());
+    const shift=((camera*.12)%640+640)%640;
+    g.drawImage(layer,-shift,37,640,150);
+    g.drawImage(layer,640-shift,37,640,150);
+  }
   g.restore();
   return true;
 }

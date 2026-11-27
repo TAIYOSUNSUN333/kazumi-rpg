@@ -314,6 +314,7 @@ function actionEquipment() {
     routeSpellById.has(shotGear) ? '撃　' + routeSpellById.get(shotGear).hint : shotGear === 'star' ? '撃　星の護符：MP10で必殺技。ソソとの連携に対応。' : shotGear === 'moon' ? '撃　' + stoneSpell.name + '：MP6で一美のHPを回復。' : '撃　魔法の指輪：MP4で飛んでいく火の玉。',
     ring ? '購入・獲得した装備を選べます。' : '魔法の指輪は装備屋・鍛冶屋で入手できます。'
   ],buttons);
+  showEquipmentArt([weapon],'weapon');
 }
 
 let flameBolts = [];

@@ -141,6 +141,9 @@ function drawActionBattle() {
   }});
   actors.sort((a, b) => a.depth - b.depth).forEach(actor => actor.paint());
 
+  if (battle.familyEffectUntil > clock) {
+    drawElementPattern(ctx,heroPoint.x,heroY-18,41,battle.familyElement,127,1-(battle.familyEffectUntil-clock)/.65);
+  }
   const effect = battle.catEffect;
   if (effect?.until > clock && !reducedMotion.matches) {
     const x = effect.type === 'strike' ? (effect.target?.x ?? enemyPoint.x) : battle.catX;
@@ -148,6 +151,7 @@ function drawActionBattle() {
     const color = catForm().color;
     const radius = effect.type === 'creation' ? 84 : 25 + cat.form * 4;
     lightAt(ctx,x,y,radius,color + '70');
+    drawElementPattern(ctx,x,y,radius,['光','炎','氷','雷','闇','全'][cat.form],cat.form,1-clamp((effect.until-clock)/.85,0,1));
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(x,y,radius,radius * .51,0,0,6.283); ctx.stroke();

@@ -95,7 +95,7 @@ function save(explicit = false) {
   if (trialVitals) return false;
   const previous = readAdventure();
   const snapshot = {
-    version: 11, bathPending, pack, shieldOwned, shieldEquipped, stage:stageSnapshot(), stones:stoneSnapshot(), actionEquipment:{slashBase,armorBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
+    version: 11, family, bathPending, pack, shieldOwned, shieldEquipped, stage:stageSnapshot(), stones:stoneSnapshot(), actionEquipment:{slashBase,armorBase,shotGear}, trailCaches:[...trailCaches], inn:innSnapshot(), tourism: tourismSnapshot(), town: townSnapshot(), x: player.x, y: player.y, hp: player.hp, mp: player.mp,
     xp: player.xp, fatigue:player.fatigue, gold: player.gold, shards: player.shards, herbs: player.herbs,
     weapon: player.weapon, armor: player.armor, party: player.party, companions: [...companions.values()], checkpoint,
     visited: npcs.map(npc => Boolean(npc.visited)), gems: gems.map(gem => gem.on),
@@ -187,6 +187,7 @@ function load(data) {
     }
   }
   loadTowns(data.town);
+  restoreFamily(data.family);
   bathPending = interior?.site.kind === 'bath' && data.bathPending === interior.site.id ? data.bathPending : null;
   loadInn(data.inn);
   loadTourism(data.tourism);
@@ -492,7 +493,7 @@ function showTitle() {
       else { enterField(); save(); }
     }]]);
   }
-  const begin = () => showIntro(0);
+  const begin = () => { family = newFamily(townDay()); showIntro(0); };
   const actions = [['はじめから', () => {
     if (!data || confirm('保存済みの冒険を上書きしますか？')) {
       removeAdventure();
@@ -594,6 +595,8 @@ function openMenu() {
     ['マップ', travelBook], ['セーブ・ロード', saveMenu], ['酒場', () => tavern(true)],
     ['石碑手帳', stoneJournal], ['召喚獣図鑑',summonDex], ['設定', settingsMenu]
   );
+  if (!battle && (availableAdults().length || Object.keys(family.relationships).length)) actions.push(['恋愛・相性',relationshipMenu]);
+  if (!battle) actions.push(['家族',familyMenu],['住宅',housingMenu]);
   if (!battle && interior) {
     actions.push(['施設の案内', servicePanel, !roomCounterReady()]);
   } else if (!battle) {
@@ -735,6 +738,8 @@ function ownedEquipment() {
     '盾 ' + (shieldEquipped ? '木枠の盾（防御時の軽減率が上昇）' : 'なし'),
     'アクセサリー ' + (shotGear === 'moon' ? stoneSpell.name : shotGear === 'star' ? '星の護符' : starterRing.name)
   ],offers);
+  showEquipmentArt([current],'armor');
+  showEquipmentArt([{name:shotGear === 'moon' ? stoneSpell.name : shotGear === 'star' ? '星の護符' : starterRing.name}],'accessory');
 }
 
 function openTrials() {
@@ -1066,6 +1071,7 @@ function hurtEnemy(enemy, damage) {
     defeatedFoe = {enemy, scale:battle.body.size, until:clock + .67, chapter:chapterOf(player.x)};
   }
   monsterDex.add(enemy.name);
+  familyVictory();
   victoryUntil = clock + 1.1;
   if (enemy.hiddenRegion !== undefined) {
     const entry = tourismFor(enemy.hiddenRegion);
@@ -1360,6 +1366,7 @@ function update(dt, elapsed = dt) {
     return;
   }
   if (battle) {
+    familySupport();
     if (battle.command) updateCommandBattle(dt);
     else {
       updateJump(dt);
